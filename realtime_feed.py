@@ -4128,6 +4128,11 @@ class LiveDataHandler(BaseHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.end_headers()
 
+        # Health check endpoint for Railway
+        if path == '/health':
+            self.wfile.write(json.dumps({'status': 'ok', 'timestamp': time.time()}).encode())
+            return
+
         # Handle /session-history endpoint for VSI analysis
         if path == '/session-history':
             # FAST PATH: Get instantly from cache (fixed 10 historical days)
