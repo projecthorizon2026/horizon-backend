@@ -642,41 +642,26 @@ def get_tpo_count_at_price(price):
 def check_setup_readiness(zone):
     """Check if conditions are met for trade at zone"""
     readiness = {
-        'delta_threshold': False,
-        'buying_imbalance': False,
         'price_at_zone': False,
         'tpo_confirmation': False,
         'session_context': False,
         'checks_passed': 0,
-        'total_checks': 5,
+        'total_checks': 3,
         'overall_score': 0,
     }
 
-    delta = state.get('cumulative_delta', 0)
-    imbalance = state.get('buying_imbalance_pct', 0)
-
-    # 1. Delta threshold (looking for negative delta to buy into)
-    if delta < -2500:
-        readiness['delta_threshold'] = True
-        readiness['checks_passed'] += 1
-
-    # 2. Buying imbalance
-    if imbalance > 400:
-        readiness['buying_imbalance'] = True
-        readiness['checks_passed'] += 1
-
-    # 3. Price at zone (within 5 pts)
+    # 1. Price at zone (within 5 pts)
     if zone['distance_pts'] <= 5:
         readiness['price_at_zone'] = True
         readiness['checks_passed'] += 1
 
-    # 4. TPO confirmation (2+ TPO at zone level)
+    # 2. TPO confirmation (2+ TPO at zone level)
     tpo_count = get_tpo_count_at_price(zone['price'])
     if tpo_count >= 2:
         readiness['tpo_confirmation'] = True
         readiness['checks_passed'] += 1
 
-    # 5. Session context (zone from current or prior session)
+    # 3. Session context (zone from current or prior session)
     active_session = tpo_state.get('active_session')
     active_num = TPO_SESSIONS.get(active_session, {}).get('number', 0) if active_session else 0
     if zone['session_number'] <= active_num or zone['session_number'] == 0:
