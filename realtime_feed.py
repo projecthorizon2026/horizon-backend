@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-PROJECT HORIZON - HTTP LIVE FEED v2
-All live data from Databento - no placeholders
+PROJECT HORIZON - HTTP LIVE FEED v2.1
+Zone Participation Machine - Live Data Feed
+All live data from Databento
 """
 import os
 import json
