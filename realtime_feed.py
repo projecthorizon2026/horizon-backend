@@ -2036,6 +2036,9 @@ def save_cache_to_file(week_id):
 def load_all_caches():
     """Load all week caches from files on startup"""
     for week_id in weekly_sessions_cache.keys():
+        # Skip 'current' week - always fetch fresh to include all trading days
+        if week_id == 'current':
+            continue
         load_cache_from_file(week_id)
 
 def fetch_week_sessions_ohlc(week_id):
@@ -2094,7 +2097,8 @@ def fetch_week_sessions_ohlc(week_id):
         result = []
 
         for trading_date in trading_days:
-            day_label = trading_date.strftime('%a')
+            # Format: "01-12 Mon" (MM-DD Day)
+            day_label = trading_date.strftime('%m-%d %a')
             date_str = trading_date.strftime('%Y-%m-%d')
 
             day_data = {
