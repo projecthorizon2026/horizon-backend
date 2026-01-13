@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-PROJECT HORIZON - HTTP LIVE FEED v2.1
+PROJECT HORIZON - HTTP LIVE FEED v2.2
 Zone Participation Machine - Live Data Feed
 All live data from Databento
+Build: 2026-01-13
 """
 import os
 import json
