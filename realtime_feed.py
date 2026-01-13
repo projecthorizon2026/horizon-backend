@@ -401,6 +401,292 @@ tpo_state = {
 }
 
 # ============================================
+# ZONE PARTICIPATION ENGINE
+# ============================================
+
+def create_zone(zone_id, name, session_num, zone_type, price):
+    """Create a zone structure"""
+    return {
+        'id': zone_id,
+        'name': name,
+        'session_number': session_num,
+        'type': zone_type,
+        'price': price,
+        'distance': 0,
+        'distance_pts': 0,
+        'status': 'watching',
+    }
+
+def get_zone_status(distance):
+    """Determine zone status based on distance from current price"""
+    abs_dist = abs(distance)
+    if abs_dist <= 2:
+        return 'at_zone'
+    elif abs_dist <= 8:
+        return 'approaching'
+    elif abs_dist <= 20:
+        return 'watching'
+    else:
+        return 'distant'
+
+def collect_all_zones():
+    """Gather all tradeable zones from all sessions"""
+    zones = []
+    current_price = state.get('current_price', 0)
+    if current_price <= 0:
+        return zones
+
+    # Session 1: Asia
+    asia = tpo_state['sessions']['tpo1_asia']
+    if asia.get('ib_high', 0) > 0 and asia.get('ib_low', 999999) < 999999:
+        zones.append(create_zone('asia_ib_high', 'Asia IB High', 1, 'ib_high', asia['ib_high']))
+        zones.append(create_zone('asia_ib_low', 'Asia IB Low', 1, 'ib_low', asia['ib_low']))
+    if asia.get('poc', 0) > 0:
+        zones.append(create_zone('asia_poc', 'Asia POC', 1, 'poc', asia['poc']))
+    if asia.get('vah', 0) > 0:
+        zones.append(create_zone('asia_vah', 'Asia VAH', 1, 'vah', asia['vah']))
+    if asia.get('val', 0) > 0:
+        zones.append(create_zone('asia_val', 'Asia VAL', 1, 'val', asia['val']))
+
+    # Session 2: London
+    london = tpo_state['sessions']['tpo2_london']
+    if london.get('ib_high', 0) > 0 and london.get('ib_low', 999999) < 999999:
+        zones.append(create_zone('london_ib_high', 'London IB High', 2, 'ib_high', london['ib_high']))
+        zones.append(create_zone('london_ib_low', 'London IB Low', 2, 'ib_low', london['ib_low']))
+    if london.get('poc', 0) > 0:
+        zones.append(create_zone('london_poc', 'London POC', 2, 'poc', london['poc']))
+    if london.get('vah', 0) > 0:
+        zones.append(create_zone('london_vah', 'London VAH', 2, 'vah', london['vah']))
+    if london.get('val', 0) > 0:
+        zones.append(create_zone('london_val', 'London VAL', 2, 'val', london['val']))
+
+    # Session 3: US AM (Main RTH)
+    us_am = tpo_state['sessions']['tpo3_us_am']
+    if us_am.get('ib_high', 0) > 0 and us_am.get('ib_low', 999999) < 999999:
+        zones.append(create_zone('us_ib_high', 'US IB High', 3, 'ib_high', us_am['ib_high']))
+        zones.append(create_zone('us_ib_low', 'US IB Low', 3, 'ib_low', us_am['ib_low']))
+    if us_am.get('poc', 0) > 0:
+        zones.append(create_zone('us_poc', 'US POC', 3, 'poc', us_am['poc']))
+    if us_am.get('vah', 0) > 0:
+        zones.append(create_zone('us_vah', 'US VAH', 3, 'vah', us_am['vah']))
+    if us_am.get('val', 0) > 0:
+        zones.append(create_zone('us_val', 'US VAL', 3, 'val', us_am['val']))
+
+    # Session 4: US PM (No IB - reference Session 3)
+    us_pm = tpo_state['sessions']['tpo4_us_pm']
+    if us_pm.get('poc', 0) > 0:
+        zones.append(create_zone('us_pm_poc', 'US PM POC', 4, 'poc', us_pm['poc']))
+
+    # Day-level zones
+    day = tpo_state['day']
+    if day.get('poc', 0) > 0:
+        zones.append(create_zone('day_poc', 'Day POC', 0, 'poc', day['poc']))
+    if day.get('vah', 0) > 0:
+        zones.append(create_zone('day_vah', 'Day VAH', 0, 'vah', day['vah']))
+    if day.get('val', 0) > 0:
+        zones.append(create_zone('day_val', 'Day VAL', 0, 'val', day['val']))
+
+    # Filter valid zones and calculate distances
+    valid_zones = []
+    for z in zones:
+        if z['price'] > 0 and z['price'] < 999999:
+            z['distance'] = round(current_price - z['price'], 2)
+            z['distance_pts'] = round(abs(z['distance']), 2)
+            z['status'] = get_zone_status(z['distance'])
+            valid_zones.append(z)
+
+    return valid_zones
+
+def calculate_trade_framework(zone, target_pts=10):
+    """Calculate entry, targets, stop for a zone"""
+    price = zone['price']
+    zone_type = zone['type']
+    session = zone['session_number']
+
+    # Get session data for targets
+    session_key = {1: 'tpo1_asia', 2: 'tpo2_london', 3: 'tpo3_us_am', 4: 'tpo4_us_pm', 0: None}.get(session)
+    session_data = tpo_state['sessions'].get(session_key, {}) if session_key else tpo_state['day']
+
+    # Default targets based on zone type
+    if zone_type == 'ib_low':
+        ib_high = session_data.get('ib_high', price + 10)
+        ib_mid = (price + ib_high) / 2
+        target1 = {'name': 'IB Mid', 'price': round(ib_mid, 2), 'pts': round(ib_mid - price, 2)}
+        target2 = {'name': 'IB High', 'price': round(ib_high, 2), 'pts': round(ib_high - price, 2)}
+        stop_pts = 3.5
+        entry_trigger = 'Test IBL + Delta flip positive + Buying imbalance'
+
+    elif zone_type == 'val':
+        poc = session_data.get('poc', price + 5)
+        vah = session_data.get('vah', price + 10)
+        target1 = {'name': 'POC', 'price': round(poc, 2), 'pts': round(poc - price, 2)}
+        target2 = {'name': 'VAH', 'price': round(vah, 2), 'pts': round(vah - price, 2)}
+        stop_pts = 3.0
+        entry_trigger = 'Retest VAL + Hold with volume'
+
+    elif zone_type == 'poc':
+        vah = session_data.get('vah', price + 8)
+        high = session_data.get('high', price + 12)
+        target1 = {'name': 'VAH', 'price': round(vah, 2), 'pts': round(vah - price, 2)}
+        target2 = {'name': 'Session High', 'price': round(high, 2), 'pts': round(high - price, 2)}
+        stop_pts = 4.0
+        entry_trigger = 'Sweep POC + Reclaim with delta support'
+
+    elif zone_type == 'ib_high':
+        ib_low = session_data.get('ib_low', price - 10)
+        ib_mid = (price + ib_low) / 2
+        # For IB High, targets go DOWN (short setup)
+        target1 = {'name': 'IB Mid', 'price': round(ib_mid, 2), 'pts': round(price - ib_mid, 2)}
+        target2 = {'name': 'IB Low', 'price': round(ib_low, 2), 'pts': round(price - ib_low, 2)}
+        stop_pts = 3.5
+        entry_trigger = 'Test IBH + Delta flip negative + Selling imbalance'
+
+    elif zone_type == 'vah':
+        poc = session_data.get('poc', price - 5)
+        val = session_data.get('val', price - 10)
+        target1 = {'name': 'POC', 'price': round(poc, 2), 'pts': round(price - poc, 2)}
+        target2 = {'name': 'VAL', 'price': round(val, 2), 'pts': round(price - val, 2)}
+        stop_pts = 3.0
+        entry_trigger = 'Retest VAH + Rejection with volume'
+
+    else:
+        # Generic framework
+        target1 = {'name': 'Target 1', 'price': round(price + 5, 2), 'pts': 5}
+        target2 = {'name': 'Target 2', 'price': round(price + 10, 2), 'pts': 10}
+        stop_pts = 3.5
+        entry_trigger = 'Test zone + Confirmation'
+
+    stop_price = round(price - stop_pts, 2)
+    avg_target = (target1['pts'] + target2['pts']) / 2
+    r_ratio = round(avg_target / stop_pts, 1) if stop_pts > 0 else 0
+
+    return {
+        'direction': 'long' if zone_type in ['ib_low', 'val', 'poc'] else 'short',
+        'entry_trigger': entry_trigger,
+        'target1': target1,
+        'target2': target2,
+        'stop': {'price': stop_price, 'pts': stop_pts},
+        'r_ratio': r_ratio,
+    }
+
+def rank_buy_zones(zones, target_pts=10):
+    """Rank zones for a 10-point buy trade"""
+    buy_candidates = []
+    current_price = state.get('current_price', 0)
+
+    for zone in zones:
+        # Only consider zones BELOW current price for buy (positive distance = zone below)
+        if zone['distance'] <= 0:  # Zone is at or above price
+            continue
+
+        # Skip zones too far away (>30 pts)
+        if zone['distance_pts'] > 30:
+            continue
+
+        # Calculate trade framework
+        trade = calculate_trade_framework(zone, target_pts)
+        zone['trade'] = trade
+
+        # Score the zone
+        score = 0
+
+        # Priority by zone type (IB Low > VAL > POC for buys)
+        type_scores = {
+            'ib_low': 40,
+            'val': 35,
+            'poc': 30,
+            'vah': 15,
+            'ib_high': 10,
+            'single_print': 25,
+        }
+        score += type_scores.get(zone['type'], 10)
+
+        # Priority by session (US > London > Asia for intraday)
+        session_scores = {3: 30, 2: 25, 1: 15, 4: 20, 0: 20}
+        score += session_scores.get(zone['session_number'], 10)
+
+        # Distance bonus (closer = better, but not too close)
+        if 3 <= zone['distance_pts'] <= 10:
+            score += 20
+        elif zone['distance_pts'] < 3:
+            score += 10  # Already at zone
+        else:
+            score += max(0, 15 - zone['distance_pts'] / 2)
+
+        # R:R bonus
+        if trade['r_ratio'] >= 2.5:
+            score += 15
+        elif trade['r_ratio'] >= 2.0:
+            score += 10
+
+        zone['confidence'] = min(100, int(score))
+        buy_candidates.append(zone)
+
+    # Sort by score and return top 3
+    buy_candidates.sort(key=lambda x: x['confidence'], reverse=True)
+    return buy_candidates[:3]
+
+def get_tpo_count_at_price(price):
+    """Get TPO count at a specific price level"""
+    day_profiles = tpo_state['day'].get('profiles', {})
+    # Round to tick size
+    tick_size = 0.10
+    rounded_price = round(price / tick_size) * tick_size
+
+    for p, letters in day_profiles.items():
+        if abs(float(p) - rounded_price) < tick_size:
+            return len(letters)
+    return 0
+
+def check_setup_readiness(zone):
+    """Check if conditions are met for trade at zone"""
+    readiness = {
+        'delta_threshold': False,
+        'buying_imbalance': False,
+        'price_at_zone': False,
+        'tpo_confirmation': False,
+        'session_context': False,
+        'checks_passed': 0,
+        'total_checks': 5,
+        'overall_score': 0,
+    }
+
+    delta = state.get('cumulative_delta', 0)
+    imbalance = state.get('buying_imbalance_pct', 0)
+
+    # 1. Delta threshold (looking for negative delta to buy into)
+    if delta < -2500:
+        readiness['delta_threshold'] = True
+        readiness['checks_passed'] += 1
+
+    # 2. Buying imbalance
+    if imbalance > 400:
+        readiness['buying_imbalance'] = True
+        readiness['checks_passed'] += 1
+
+    # 3. Price at zone (within 5 pts)
+    if zone['distance_pts'] <= 5:
+        readiness['price_at_zone'] = True
+        readiness['checks_passed'] += 1
+
+    # 4. TPO confirmation (2+ TPO at zone level)
+    tpo_count = get_tpo_count_at_price(zone['price'])
+    if tpo_count >= 2:
+        readiness['tpo_confirmation'] = True
+        readiness['checks_passed'] += 1
+
+    # 5. Session context (zone from current or prior session)
+    active_session = tpo_state.get('active_session')
+    active_num = TPO_SESSIONS.get(active_session, {}).get('number', 0) if active_session else 0
+    if zone['session_number'] <= active_num or zone['session_number'] == 0:
+        readiness['session_context'] = True
+        readiness['checks_passed'] += 1
+
+    readiness['overall_score'] = int((readiness['checks_passed'] / readiness['total_checks']) * 100)
+
+    return readiness
+
+# ============================================
 # TIME UTILITIES (ET)
 # ============================================
 def get_et_now():
@@ -4131,6 +4417,57 @@ class LiveDataHandler(BaseHTTPRequestHandler):
         # Health check endpoint for Railway
         if path == '/health':
             self.wfile.write(json.dumps({'status': 'ok', 'timestamp': time.time()}).encode())
+            return
+
+        # Zone Participation endpoint
+        if path == '/zones':
+            with lock:
+                zones = collect_all_zones()
+                buy_zones = rank_buy_zones(zones, target_pts=10)
+
+                # Add readiness to top zones
+                for i, zone in enumerate(buy_zones):
+                    zone['priority'] = i + 1
+                    zone['readiness'] = check_setup_readiness(zone)
+
+                # Get session IBs
+                asia_ib_high = tpo_state['sessions']['tpo1_asia'].get('ib_high', 0)
+                asia_ib_low = tpo_state['sessions']['tpo1_asia'].get('ib_low', 999999)
+                london_ib_high = tpo_state['sessions']['tpo2_london'].get('ib_high', 0)
+                london_ib_low = tpo_state['sessions']['tpo2_london'].get('ib_low', 999999)
+                us_ib_high = tpo_state['sessions']['tpo3_us_am'].get('ib_high', 0)
+                us_ib_low = tpo_state['sessions']['tpo3_us_am'].get('ib_low', 999999)
+
+                response = {
+                    'current_price': state.get('current_price', 0),
+                    'timestamp': time.time(),
+                    'active_session': tpo_state.get('active_session'),
+
+                    # Top 3 buy zones with full trade framework
+                    'buy_zones': buy_zones,
+
+                    # All zones for reference
+                    'all_zones': zones,
+
+                    # Session IBs summary
+                    'session_ibs': {
+                        'asia': {
+                            'high': asia_ib_high if asia_ib_high > 0 else None,
+                            'low': asia_ib_low if asia_ib_low < 999999 else None,
+                        },
+                        'london': {
+                            'high': london_ib_high if london_ib_high > 0 else None,
+                            'low': london_ib_low if london_ib_low < 999999 else None,
+                        },
+                        'us': {
+                            'high': us_ib_high if us_ib_high > 0 else None,
+                            'low': us_ib_low if us_ib_low < 999999 else None,
+                        },
+                        'us_pm': None,  # No IB for US PM session
+                    }
+                }
+
+            self.wfile.write(json.dumps(response).encode())
             return
 
         # Handle /session-history endpoint for VSI analysis
