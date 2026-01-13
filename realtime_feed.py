@@ -2269,7 +2269,7 @@ def fetch_all_historical_weeks():
 market_overview_cache = {
     'data': None,
     'timestamp': 0,
-    'ttl': 30  # Refresh every 30 seconds
+    'ttl': 120  # Refresh every 2 minutes (yfinance data doesn't need real-time refresh)
 }
 
 def calculate_correlations():
@@ -2755,29 +2755,89 @@ def fetch_market_overview():
                 return round(((curr_close - prev_close) / prev_close) * 100, 2)
             return 0
 
+        # Batch download for efficiency (one HTTP request instead of many)
+        try:
+            print(f"📈 Fetching {len(all_symbols)} symbols...")
+            data_5d = yf.download(all_symbols, period='5d', progress=False, threads=True)
+            data_1mo = yf.download(all_symbols, period='1mo', progress=False, threads=True)
+        except Exception as e:
+            print(f"⚠️ Batch download failed: {e}, falling back to individual fetch")
+            data_5d = None
+            data_1mo = None
+
         for symbol, info in symbol_map.items():
             try:
-                # Fetch data for each ticker individually (more reliable)
-                ticker = yf.Ticker(symbol)
+                # Extract data from batch download
+                if data_5d is not None and len(all_symbols) > 1:
+                    # Multi-ticker format: data['Close'][symbol]
+                    hist_5d_close = data_5d['Close'][symbol].dropna() if symbol in data_5d['Close'].columns else None
+                    hist_5d_open = data_5d['Open'][symbol].dropna() if symbol in data_5d['Open'].columns else None
+                    hist_5d_high = data_5d['High'][symbol].dropna() if symbol in data_5d['High'].columns else None
+                    hist_5d_low = data_5d['Low'][symbol].dropna() if symbol in data_5d['Low'].columns else None
 
-                # Get history for different periods
-                hist_5d = ticker.history(period='5d')
-                hist_1mo = ticker.history(period='1mo')
+                    hist_1mo_close = data_1mo['Close'][symbol].dropna() if data_1mo is not None and symbol in data_1mo['Close'].columns else None
+                    hist_1mo_open = data_1mo['Open'][symbol].dropna() if data_1mo is not None and symbol in data_1mo['Open'].columns else None
+                    hist_1mo_high = data_1mo['High'][symbol].dropna() if data_1mo is not None and symbol in data_1mo['High'].columns else None
+                    hist_1mo_low = data_1mo['Low'][symbol].dropna() if data_1mo is not None and symbol in data_1mo['Low'].columns else None
+                elif data_5d is not None:
+                    # Single ticker format
+                    hist_5d_close = data_5d['Close'].dropna()
+                    hist_5d_open = data_5d['Open'].dropna()
+                    hist_5d_high = data_5d['High'].dropna()
+                    hist_5d_low = data_5d['Low'].dropna()
 
-                if len(hist_5d) == 0:
+                    hist_1mo_close = data_1mo['Close'].dropna() if data_1mo is not None else None
+                    hist_1mo_open = data_1mo['Open'].dropna() if data_1mo is not None else None
+                    hist_1mo_high = data_1mo['High'].dropna() if data_1mo is not None else None
+                    hist_1mo_low = data_1mo['Low'].dropna() if data_1mo is not None else None
+                else:
+                    # Fallback to individual fetch
+                    ticker = yf.Ticker(symbol)
+                    hist = ticker.history(period='5d')
+                    if len(hist) == 0:
+                        continue
+                    hist_5d_close = hist['Close']
+                    hist_5d_open = hist['Open']
+                    hist_5d_high = hist['High']
+                    hist_5d_low = hist['Low']
+
+                    hist_1mo = ticker.history(period='1mo')
+                    hist_1mo_close = hist_1mo['Close'] if len(hist_1mo) > 0 else None
+                    hist_1mo_open = hist_1mo['Open'] if len(hist_1mo) > 0 else None
+                    hist_1mo_high = hist_1mo['High'] if len(hist_1mo) > 0 else None
+                    hist_1mo_low = hist_1mo['Low'] if len(hist_1mo) > 0 else None
+
+                if hist_5d_close is None or len(hist_5d_close) == 0:
                     continue
 
-                # Current = latest row
-                current = row_to_ohlc(hist_5d.iloc[-1])
+                # Build OHLC from series
+                current = {
+                    'o': safe_float(hist_5d_open.iloc[-1]) if hist_5d_open is not None and len(hist_5d_open) > 0 else 0,
+                    'h': safe_float(hist_5d_high.iloc[-1]) if hist_5d_high is not None and len(hist_5d_high) > 0 else 0,
+                    'l': safe_float(hist_5d_low.iloc[-1]) if hist_5d_low is not None and len(hist_5d_low) > 0 else 0,
+                    'c': safe_float(hist_5d_close.iloc[-1])
+                }
 
-                # Previous day = second to last row (if available)
-                prev_1d = row_to_ohlc(hist_5d.iloc[-2]) if len(hist_5d) > 1 else current
+                prev_1d = {
+                    'o': safe_float(hist_5d_open.iloc[-2]) if hist_5d_open is not None and len(hist_5d_open) > 1 else current['o'],
+                    'h': safe_float(hist_5d_high.iloc[-2]) if hist_5d_high is not None and len(hist_5d_high) > 1 else current['h'],
+                    'l': safe_float(hist_5d_low.iloc[-2]) if hist_5d_low is not None and len(hist_5d_low) > 1 else current['l'],
+                    'c': safe_float(hist_5d_close.iloc[-2]) if len(hist_5d_close) > 1 else current['c']
+                }
 
-                # Previous week = 5 trading days ago
-                prev_1w = row_to_ohlc(hist_5d.iloc[0]) if len(hist_5d) >= 5 else prev_1d
+                prev_1w = {
+                    'o': safe_float(hist_5d_open.iloc[0]) if hist_5d_open is not None and len(hist_5d_open) >= 5 else prev_1d['o'],
+                    'h': safe_float(hist_5d_high.iloc[0]) if hist_5d_high is not None and len(hist_5d_high) >= 5 else prev_1d['h'],
+                    'l': safe_float(hist_5d_low.iloc[0]) if hist_5d_low is not None and len(hist_5d_low) >= 5 else prev_1d['l'],
+                    'c': safe_float(hist_5d_close.iloc[0]) if len(hist_5d_close) >= 5 else prev_1d['c']
+                }
 
-                # Previous month = first row of monthly data
-                prev_1m = row_to_ohlc(hist_1mo.iloc[0]) if len(hist_1mo) > 0 else prev_1w
+                prev_1m = {
+                    'o': safe_float(hist_1mo_open.iloc[0]) if hist_1mo_open is not None and len(hist_1mo_open) > 0 else prev_1w['o'],
+                    'h': safe_float(hist_1mo_high.iloc[0]) if hist_1mo_high is not None and len(hist_1mo_high) > 0 else prev_1w['h'],
+                    'l': safe_float(hist_1mo_low.iloc[0]) if hist_1mo_low is not None and len(hist_1mo_low) > 0 else prev_1w['l'],
+                    'c': safe_float(hist_1mo_close.iloc[0]) if hist_1mo_close is not None and len(hist_1mo_close) > 0 else prev_1w['c']
+                }
 
                 change_1d = calc_change(current['c'], prev_1d['c'])
                 change_1w = calc_change(current['c'], prev_1w['c'])
@@ -2798,7 +2858,7 @@ def fetch_market_overview():
                 sectors_data[info['sector']]['stocks'].append(stock_data)
 
             except Exception as e:
-                print(f"Error fetching {symbol}: {e}")
+                print(f"Error processing {symbol}: {e}")
                 continue
 
         # Convert to list
@@ -5276,6 +5336,16 @@ def start_http_server():
 # ============================================
 # MAIN
 # ============================================
+def preload_market_overview():
+    """Background preload of market overview data for faster Correlation Matrix"""
+    if HAS_YFINANCE:
+        print("📊 Preloading market overview data...")
+        try:
+            fetch_market_overview()
+            print("✅ Market overview preloaded")
+        except Exception as e:
+            print(f"⚠️ Market overview preload failed: {e}")
+
 def main():
     print("=" * 60)
     print("  PROJECT HORIZON - LIVE FEED v2 (All Live Data)")
@@ -5283,12 +5353,16 @@ def main():
     print(f"📡 HTTP: http://localhost:{PORT}")
     print(f"🔑 API: {API_KEY[:10]}..." if API_KEY else "🔑 API: NOT SET")
     print("=" * 60)
-    
+
     global stream_running
 
     # Start HTTP server
     http_thread = threading.Thread(target=start_http_server, daemon=True)
     http_thread.start()
+
+    # Preload market overview in background (for faster Correlation Matrix)
+    market_thread = threading.Thread(target=preload_market_overview, daemon=True)
+    market_thread.start()
 
     # Set stream_running before starting feed so the stream knows it should continue
     stream_running = True
