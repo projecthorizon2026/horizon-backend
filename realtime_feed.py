@@ -5042,6 +5042,50 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({'status': 'reset', 'message': 'Volume counters reset'}).encode())
 
+        elif self.path == '/reset-connection':
+            # Reset connection - clears state and triggers reconnection
+            def reset_and_reconnect():
+                global state, tpo_state, volume_history, delta_history
+                print("\n🔄 RESET CONNECTION REQUESTED")
+
+                with lock:
+                    # Reset volume state
+                    state['buy_volume'] = 0
+                    state['sell_volume'] = 0
+                    state['total_volume'] = 0
+                    state['cumulative_delta'] = 0
+                    state['volume_start_time'] = time.time()
+                    state['volume_5m'] = {'buy': 0, 'sell': 0, 'delta': 0}
+                    state['volume_15m'] = {'buy': 0, 'sell': 0, 'delta': 0}
+                    state['volume_30m'] = {'buy': 0, 'sell': 0, 'delta': 0}
+                    state['volume_1h'] = {'buy': 0, 'sell': 0, 'delta': 0}
+
+                    # Reset session state
+                    state['session_high'] = 0
+                    state['session_low'] = 999999.0
+                    state['session_open'] = 0
+                    state['session_buy'] = 0
+                    state['session_sell'] = 0
+
+                    # Clear histories
+                    volume_history.clear()
+                    delta_history.clear()
+
+                print("✅ State reset complete - connection will auto-reconnect")
+
+            # Run reset in background
+            reset_thread = threading.Thread(target=reset_and_reconnect, daemon=True)
+            reset_thread.start()
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                'status': 'resetting',
+                'message': 'Connection reset initiated. Live data will refresh momentarily.'
+            }).encode())
+
         elif self.path == '/switch-contract':
             # Read request body
             content_length = int(self.headers.get('Content-Length', 0))
