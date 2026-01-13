@@ -640,23 +640,30 @@ def get_tpo_count_at_price(price):
     return 0
 
 def check_setup_readiness(zone):
-    """Check if conditions are met for trade at zone"""
+    """Check if conditions are met for trade at zone - TPO-based high-value metrics"""
     readiness = {
         'price_at_zone': False,
         'tpo_confirmation': False,
         'session_context': False,
+        'single_print_nearby': False,
+        'poc_alignment': False,
+        'ib_intact': False,
         'checks_passed': 0,
-        'total_checks': 3,
+        'total_checks': 6,
         'overall_score': 0,
     }
+
+    zone_price = zone['price']
+    zone_session = zone['session_number']
+    zone_type = zone['type']
 
     # 1. Price at zone (within 5 pts)
     if zone['distance_pts'] <= 5:
         readiness['price_at_zone'] = True
         readiness['checks_passed'] += 1
 
-    # 2. TPO confirmation (2+ TPO at zone level)
-    tpo_count = get_tpo_count_at_price(zone['price'])
+    # 2. TPO confirmation (2+ TPO at zone level = time acceptance)
+    tpo_count = get_tpo_count_at_price(zone_price)
     if tpo_count >= 2:
         readiness['tpo_confirmation'] = True
         readiness['checks_passed'] += 1
@@ -664,9 +671,65 @@ def check_setup_readiness(zone):
     # 3. Session context (zone from current or prior session)
     active_session = tpo_state.get('active_session')
     active_num = TPO_SESSIONS.get(active_session, {}).get('number', 0) if active_session else 0
-    if zone['session_number'] <= active_num or zone['session_number'] == 0:
+    if zone_session <= active_num or zone_session == 0:
         readiness['session_context'] = True
         readiness['checks_passed'] += 1
+
+    # 4. Single Print Proximity (unfilled gaps near zone add confluence)
+    # Check if any single prints are within 5 pts of zone
+    day_single_prints = tpo_state['day'].get('single_prints', [])
+    for sp in day_single_prints:
+        if abs(sp - zone_price) <= 5:
+            readiness['single_print_nearby'] = True
+            readiness['checks_passed'] += 1
+            break
+
+    # 5. POC Alignment (zone near a POC = high volume support/resistance)
+    # Check day POC and session POCs
+    day_poc = tpo_state['day'].get('poc', 0)
+    if day_poc > 0 and abs(day_poc - zone_price) <= 3:
+        readiness['poc_alignment'] = True
+        readiness['checks_passed'] += 1
+    else:
+        # Check session POCs
+        for sess_key in ['tpo1_asia', 'tpo2_london', 'tpo3_us_am']:
+            sess_poc = tpo_state['sessions'].get(sess_key, {}).get('poc', 0)
+            if sess_poc > 0 and abs(sess_poc - zone_price) <= 3:
+                readiness['poc_alignment'] = True
+                readiness['checks_passed'] += 1
+                break
+
+    # 6. IB Intact (IB levels stronger when not extended)
+    # Check if we're at an IB level and whether IB has been broken
+    if zone_type in ['ib_low', 'ib_high']:
+        session_key = {1: 'tpo1_asia', 2: 'tpo2_london', 3: 'tpo3_us_am'}.get(zone_session)
+        if session_key:
+            sess_data = tpo_state['sessions'].get(session_key, {})
+            ib_high = sess_data.get('ib_high', 0)
+            ib_low = sess_data.get('ib_low', 999999)
+            sess_high = sess_data.get('high', 0)
+            sess_low = sess_data.get('low', 999999)
+
+            # IB is intact if session hasn't broken IB range
+            if ib_high > 0 and ib_low < 999999:
+                ib_extended_up = sess_high > ib_high + 0.5
+                ib_extended_down = sess_low < ib_low - 0.5
+                if not ib_extended_up and not ib_extended_down:
+                    readiness['ib_intact'] = True
+                    readiness['checks_passed'] += 1
+    else:
+        # For non-IB zones, check if any IB is intact (adds to market structure)
+        for sess_key in ['tpo1_asia', 'tpo2_london', 'tpo3_us_am']:
+            sess_data = tpo_state['sessions'].get(sess_key, {})
+            ib_high = sess_data.get('ib_high', 0)
+            ib_low = sess_data.get('ib_low', 999999)
+            sess_high = sess_data.get('high', 0)
+            sess_low = sess_data.get('low', 999999)
+            if ib_high > 0 and ib_low < 999999:
+                if sess_high <= ib_high + 0.5 and sess_low >= ib_low - 0.5:
+                    readiness['ib_intact'] = True
+                    readiness['checks_passed'] += 1
+                    break
 
     readiness['overall_score'] = int((readiness['checks_passed'] / readiness['total_checks']) * 100)
 
