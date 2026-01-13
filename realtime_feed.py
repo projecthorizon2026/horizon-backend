@@ -2109,6 +2109,62 @@ def load_all_caches():
             continue
         load_cache_from_file(week_id)
 
+def initialize_weekly_open_from_history():
+    """Initialize weekly_open from Monday's pre_asia session open if not set"""
+    global state
+
+    with lock:
+        # Skip if already set
+        if state['weekly_open'] > 0:
+            print(f"   📅 Weekly open already set: ${state['weekly_open']:.2f}")
+            return
+
+    # Get current week data from cache
+    current_week = weekly_sessions_cache.get('current', {})
+    week_data = current_week.get('data')
+
+    if not week_data:
+        print("   ⚠️ No current week data available for weekly open initialization")
+        return
+
+    # Find Monday's data (or the first trading day of the week)
+    monday_data = None
+    for day in week_data:
+        label = day.get('label', '')
+        if 'Mon' in label or day.get('date', '').endswith('-12'):  # Monday or first day
+            monday_data = day
+            break
+
+    if not monday_data:
+        # Use the earliest day in the week
+        if week_data:
+            monday_data = week_data[-1] if len(week_data) > 1 else week_data[0]
+
+    if monday_data:
+        sessions = monday_data.get('sessions', {})
+        # Get pre_asia session open (Sunday 18:00 ET = week open)
+        pre_asia = sessions.get('pre_asia', {})
+        weekly_open_price = pre_asia.get('o', 0)
+
+        if weekly_open_price > 0:
+            with lock:
+                state['weekly_open'] = weekly_open_price
+                state['weekly_open_date'] = monday_data.get('date', '')
+            print(f"   📅 Weekly Open initialized from history: ${weekly_open_price:.2f} ({monday_data.get('label', 'Monday')})")
+        else:
+            # Try japan_ib or first available session
+            for sess_key in ['japan_ib', 'china', 'asia_close', 'london']:
+                sess = sessions.get(sess_key, {})
+                if sess.get('o', 0) > 0:
+                    weekly_open_price = sess.get('o')
+                    with lock:
+                        state['weekly_open'] = weekly_open_price
+                        state['weekly_open_date'] = monday_data.get('date', '')
+                    print(f"   📅 Weekly Open initialized from {sess_key}: ${weekly_open_price:.2f}")
+                    break
+    else:
+        print("   ⚠️ Could not find Monday data for weekly open initialization")
+
 def fetch_week_sessions_ohlc(week_id):
     """Fetch historical session OHLC for a specific week"""
     global weekly_sessions_cache, ACTIVE_CONTRACT, front_month_instrument_id
@@ -3868,6 +3924,10 @@ def start_stream():
         # Fetch 'current' week using calendar week logic (Monday to today)
         print("📊 Fetching current calendar week...")
         fetch_week_sessions_ohlc('current')
+
+        # Initialize weekly_open from Monday's pre_asia session if not set
+        initialize_weekly_open_from_history()
+
         # Fetch all historical weeks (5 weeks back)
         print("📅 Pre-fetching 5 historical weeks...")
         fetch_all_historical_weeks()
