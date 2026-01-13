@@ -142,6 +142,10 @@ state = {
     'day_low': 999999.0,
     'day_open': 0.0,  # First trade at 18:00 ET
 
+    # Week levels (for weekly open tracking)
+    'weekly_open': 0.0,  # Monday 18:00 ET open price
+    'weekly_open_date': '',  # Date of the weekly open
+
     # Ended sessions OHLC (stored when session ends)
     'ended_sessions': {},  # {session_id: {open, high, low, close}}
     
@@ -4043,6 +4047,20 @@ def process_trade(record):
                     state['ended_sessions'] = {}  # Clear ended sessions for new day
                     print(f"   🌅 New trading day started - Day Open: ${price:.2f}")
 
+                    # Track weekly open (Sunday 18:00 ET = start of trading week)
+                    et_now = get_et_now()
+                    today_str = et_now.strftime('%Y-%m-%d')
+                    # Sunday = 6, so Sunday 18:00 ET is start of week
+                    if et_now.weekday() == 6:  # Sunday
+                        state['weekly_open'] = price
+                        state['weekly_open_date'] = today_str
+                        print(f"   📅 New trading week started - Weekly Open: ${price:.2f}")
+                    # Also set weekly open on Monday if not set (for edge cases)
+                    elif et_now.weekday() == 0 and state['weekly_open'] == 0:  # Monday
+                        state['weekly_open'] = price
+                        state['weekly_open_date'] = today_str
+                        print(f"   📅 Weekly Open initialized on Monday: ${price:.2f}")
+
             # Track session high/low
             if price > state['session_high']:
                 state['session_high'] = price
@@ -4940,6 +4958,10 @@ class LiveDataHandler(BaseHTTPRequestHandler):
                 'day_open': state['day_open'] if state['day_open'] > 0 else 0,
                 'day_high': state['day_high'] if state['day_high'] > 0 else 0,
                 'day_low': state['day_low'] if state['day_low'] < 999999 else 0,
+
+                # Weekly Open (Sunday 18:00 ET)
+                'weekly_open': state['weekly_open'] if state['weekly_open'] > 0 else 0,
+                'weekly_open_date': state['weekly_open_date'],
 
                 # Ended sessions OHLC
                 'ended_sessions': state['ended_sessions'],
