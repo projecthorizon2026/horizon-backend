@@ -2756,35 +2756,36 @@ def fetch_market_overview():
             return 0
 
         # Batch download for efficiency (one HTTP request instead of many)
+        # Use 10d for better 1W calculation (ensures we have ~5+ trading days)
         try:
             print(f"📈 Fetching {len(all_symbols)} symbols...")
-            data_5d = yf.download(all_symbols, period='5d', progress=False, threads=True)
+            data_10d = yf.download(all_symbols, period='10d', progress=False, threads=True)
             data_1mo = yf.download(all_symbols, period='1mo', progress=False, threads=True)
         except Exception as e:
             print(f"⚠️ Batch download failed: {e}, falling back to individual fetch")
-            data_5d = None
+            data_10d = None
             data_1mo = None
 
         for symbol, info in symbol_map.items():
             try:
-                # Extract data from batch download
-                if data_5d is not None and len(all_symbols) > 1:
+                # Extract data from batch download (10d for better 1W calculation)
+                if data_10d is not None and len(all_symbols) > 1:
                     # Multi-ticker format: data['Close'][symbol]
-                    hist_5d_close = data_5d['Close'][symbol].dropna() if symbol in data_5d['Close'].columns else None
-                    hist_5d_open = data_5d['Open'][symbol].dropna() if symbol in data_5d['Open'].columns else None
-                    hist_5d_high = data_5d['High'][symbol].dropna() if symbol in data_5d['High'].columns else None
-                    hist_5d_low = data_5d['Low'][symbol].dropna() if symbol in data_5d['Low'].columns else None
+                    hist_10d_close = data_10d['Close'][symbol].dropna() if symbol in data_10d['Close'].columns else None
+                    hist_10d_open = data_10d['Open'][symbol].dropna() if symbol in data_10d['Open'].columns else None
+                    hist_10d_high = data_10d['High'][symbol].dropna() if symbol in data_10d['High'].columns else None
+                    hist_10d_low = data_10d['Low'][symbol].dropna() if symbol in data_10d['Low'].columns else None
 
                     hist_1mo_close = data_1mo['Close'][symbol].dropna() if data_1mo is not None and symbol in data_1mo['Close'].columns else None
                     hist_1mo_open = data_1mo['Open'][symbol].dropna() if data_1mo is not None and symbol in data_1mo['Open'].columns else None
                     hist_1mo_high = data_1mo['High'][symbol].dropna() if data_1mo is not None and symbol in data_1mo['High'].columns else None
                     hist_1mo_low = data_1mo['Low'][symbol].dropna() if data_1mo is not None and symbol in data_1mo['Low'].columns else None
-                elif data_5d is not None:
+                elif data_10d is not None:
                     # Single ticker format
-                    hist_5d_close = data_5d['Close'].dropna()
-                    hist_5d_open = data_5d['Open'].dropna()
-                    hist_5d_high = data_5d['High'].dropna()
-                    hist_5d_low = data_5d['Low'].dropna()
+                    hist_10d_close = data_10d['Close'].dropna()
+                    hist_10d_open = data_10d['Open'].dropna()
+                    hist_10d_high = data_10d['High'].dropna()
+                    hist_10d_low = data_10d['Low'].dropna()
 
                     hist_1mo_close = data_1mo['Close'].dropna() if data_1mo is not None else None
                     hist_1mo_open = data_1mo['Open'].dropna() if data_1mo is not None else None
@@ -2793,13 +2794,13 @@ def fetch_market_overview():
                 else:
                     # Fallback to individual fetch
                     ticker = yf.Ticker(symbol)
-                    hist = ticker.history(period='5d')
+                    hist = ticker.history(period='10d')
                     if len(hist) == 0:
                         continue
-                    hist_5d_close = hist['Close']
-                    hist_5d_open = hist['Open']
-                    hist_5d_high = hist['High']
-                    hist_5d_low = hist['Low']
+                    hist_10d_close = hist['Close']
+                    hist_10d_open = hist['Open']
+                    hist_10d_high = hist['High']
+                    hist_10d_low = hist['Low']
 
                     hist_1mo = ticker.history(period='1mo')
                     hist_1mo_close = hist_1mo['Close'] if len(hist_1mo) > 0 else None
@@ -2807,29 +2808,32 @@ def fetch_market_overview():
                     hist_1mo_high = hist_1mo['High'] if len(hist_1mo) > 0 else None
                     hist_1mo_low = hist_1mo['Low'] if len(hist_1mo) > 0 else None
 
-                if hist_5d_close is None or len(hist_5d_close) == 0:
+                if hist_10d_close is None or len(hist_10d_close) == 0:
                     continue
 
                 # Build OHLC from series
                 current = {
-                    'o': safe_float(hist_5d_open.iloc[-1]) if hist_5d_open is not None and len(hist_5d_open) > 0 else 0,
-                    'h': safe_float(hist_5d_high.iloc[-1]) if hist_5d_high is not None and len(hist_5d_high) > 0 else 0,
-                    'l': safe_float(hist_5d_low.iloc[-1]) if hist_5d_low is not None and len(hist_5d_low) > 0 else 0,
-                    'c': safe_float(hist_5d_close.iloc[-1])
+                    'o': safe_float(hist_10d_open.iloc[-1]) if hist_10d_open is not None and len(hist_10d_open) > 0 else 0,
+                    'h': safe_float(hist_10d_high.iloc[-1]) if hist_10d_high is not None and len(hist_10d_high) > 0 else 0,
+                    'l': safe_float(hist_10d_low.iloc[-1]) if hist_10d_low is not None and len(hist_10d_low) > 0 else 0,
+                    'c': safe_float(hist_10d_close.iloc[-1])
                 }
 
                 prev_1d = {
-                    'o': safe_float(hist_5d_open.iloc[-2]) if hist_5d_open is not None and len(hist_5d_open) > 1 else current['o'],
-                    'h': safe_float(hist_5d_high.iloc[-2]) if hist_5d_high is not None and len(hist_5d_high) > 1 else current['h'],
-                    'l': safe_float(hist_5d_low.iloc[-2]) if hist_5d_low is not None and len(hist_5d_low) > 1 else current['l'],
-                    'c': safe_float(hist_5d_close.iloc[-2]) if len(hist_5d_close) > 1 else current['c']
+                    'o': safe_float(hist_10d_open.iloc[-2]) if hist_10d_open is not None and len(hist_10d_open) > 1 else current['o'],
+                    'h': safe_float(hist_10d_high.iloc[-2]) if hist_10d_high is not None and len(hist_10d_high) > 1 else current['h'],
+                    'l': safe_float(hist_10d_low.iloc[-2]) if hist_10d_low is not None and len(hist_10d_low) > 1 else current['l'],
+                    'c': safe_float(hist_10d_close.iloc[-2]) if len(hist_10d_close) > 1 else current['c']
                 }
 
+                # For 1W, go back ~5 trading days from the most recent data
+                # With 10d period, we should have enough data even early in the week
+                week_idx = min(5, len(hist_10d_close) - 1)  # 5 trading days back, or as far as we have
                 prev_1w = {
-                    'o': safe_float(hist_5d_open.iloc[0]) if hist_5d_open is not None and len(hist_5d_open) >= 5 else prev_1d['o'],
-                    'h': safe_float(hist_5d_high.iloc[0]) if hist_5d_high is not None and len(hist_5d_high) >= 5 else prev_1d['h'],
-                    'l': safe_float(hist_5d_low.iloc[0]) if hist_5d_low is not None and len(hist_5d_low) >= 5 else prev_1d['l'],
-                    'c': safe_float(hist_5d_close.iloc[0]) if len(hist_5d_close) >= 5 else prev_1d['c']
+                    'o': safe_float(hist_10d_open.iloc[-week_idx-1]) if hist_10d_open is not None and len(hist_10d_open) > week_idx else prev_1d['o'],
+                    'h': safe_float(hist_10d_high.iloc[-week_idx-1]) if hist_10d_high is not None and len(hist_10d_high) > week_idx else prev_1d['h'],
+                    'l': safe_float(hist_10d_low.iloc[-week_idx-1]) if hist_10d_low is not None and len(hist_10d_low) > week_idx else prev_1d['l'],
+                    'c': safe_float(hist_10d_close.iloc[-week_idx-1]) if len(hist_10d_close) > week_idx else prev_1d['c']
                 }
 
                 prev_1m = {
@@ -3253,7 +3257,7 @@ def fetch_historical_sessions_ohlc(days=6):
         result = []
 
         for day_idx, trading_date in enumerate(trading_days):
-            day_label = trading_date.strftime('%a')  # Mon, Tue, etc.
+            day_label = trading_date.strftime('%m-%d %a')  # 01-12 Mon format
             date_str = trading_date.strftime('%Y-%m-%d')
 
             # For sessions that cross midnight, we need the previous day's date for start
