@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PROJECT HORIZON - HTTP LIVE FEED v2.3
+PROJECT HORIZON - HTTP LIVE FEED v2.4
 Zone Participation Machine - Live Data Feed
 All live data from Databento
 Build: 2026-01-13-b
