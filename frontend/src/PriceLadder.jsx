@@ -1,7 +1,131 @@
 // Price Ladder Component - Add this to App.jsx
+import { useMemo } from 'react';
 
 const PriceLadder = ({ metrics, gexData }) => {
   const currentPrice = metrics.current_price || 0;
+
+  // ============================================
+  // ORDER FLOW ANALYSIS - Fabio's Trading Model
+  // ============================================
+  const orderFlowAnalysis = useMemo(() => {
+    const history = metrics.volume_5m?.history || [];
+    if (history.length < 5) {
+      return { regime: 'LOADING', divergence: null, vsa: null, cvdTrend: 0, priceTrend: 0 };
+    }
+
+    // Get recent candles (most recent first in history)
+    const recent = history.slice(0, 10);
+    const older = history.slice(10, 20);
+
+    // Calculate CVD trend (sum of recent deltas vs older deltas)
+    const recentCvd = recent.reduce((sum, c) => sum + (c.delta || 0), 0);
+    const olderCvd = older.reduce((sum, c) => sum + (c.delta || 0), 0);
+    const cvdTrend = recentCvd - olderCvd; // Positive = CVD rising, Negative = CVD falling
+
+    // Calculate price trend
+    const recentPriceStart = recent[recent.length - 1]?.price_open || 0;
+    const recentPriceEnd = recent[0]?.price_close || 0;
+    const priceChange = recentPriceEnd - recentPriceStart;
+    const priceChangePercent = recentPriceStart > 0 ? (priceChange / recentPriceStart) * 100 : 0;
+
+    // Determine Market Regime
+    // Distribution: CVD falling significantly while price balanced or rising
+    // Accumulation: CVD rising significantly while price balanced or falling
+    // Balanced: CVD and price moving together or both flat
+    let regime = 'BALANCED';
+    let regimeStrength = 0;
+
+    const cvdThreshold = 500; // Minimum CVD change to consider significant
+    const priceThreshold = 0.1; // 0.1% price change threshold
+
+    if (Math.abs(cvdTrend) > cvdThreshold) {
+      if (cvdTrend < -cvdThreshold && priceChangePercent > -priceThreshold) {
+        regime = 'DISTRIBUTION';
+        regimeStrength = Math.min(100, Math.abs(cvdTrend) / 20);
+      } else if (cvdTrend > cvdThreshold && priceChangePercent < priceThreshold) {
+        regime = 'ACCUMULATION';
+        regimeStrength = Math.min(100, Math.abs(cvdTrend) / 20);
+      }
+    }
+
+    // Detect CVD vs Price Divergence
+    // Exhaustion: Price makes new extreme but CVD doesn't follow
+    // Absorption: CVD makes new extreme but price doesn't follow
+    let divergence = null;
+
+    // Check last 3 candles for divergence patterns
+    if (recent.length >= 3) {
+      const [c1, c2, c3] = recent; // c1 is most recent
+
+      // Price making higher highs but CVD not following (Bearish Exhaustion)
+      if (c1.price_high > c2.price_high && c2.price_high > c3.price_high) {
+        const cvdFollowing = c1.delta > c2.delta;
+        if (!cvdFollowing && c1.delta < 0) {
+          divergence = { type: 'EXHAUSTION', direction: 'BEARISH', message: 'Price highs but CVD failing' };
+        }
+      }
+
+      // Price making lower lows but CVD not following (Bullish Exhaustion)
+      if (c1.price_low < c2.price_low && c2.price_low < c3.price_low) {
+        const cvdFollowing = c1.delta < c2.delta;
+        if (!cvdFollowing && c1.delta > 0) {
+          divergence = { type: 'EXHAUSTION', direction: 'BULLISH', message: 'Price lows but CVD rising' };
+        }
+      }
+
+      // Strong delta but price not moving (Absorption)
+      const avgDelta = recent.slice(0, 5).reduce((s, c) => s + Math.abs(c.delta || 0), 0) / 5;
+      const lastPriceMove = Math.abs(c1.price_close - c1.price_open);
+      const avgPriceMove = recent.slice(0, 5).reduce((s, c) => s + Math.abs((c.price_close || 0) - (c.price_open || 0)), 0) / 5;
+
+      if (Math.abs(c1.delta) > avgDelta * 1.5 && lastPriceMove < avgPriceMove * 0.5) {
+        divergence = {
+          type: 'ABSORPTION',
+          direction: c1.delta > 0 ? 'SELL_ABSORBING' : 'BUY_ABSORBING',
+          message: c1.delta > 0 ? 'Buying absorbed by sellers' : 'Selling absorbed by buyers'
+        };
+      }
+    }
+
+    // VSA Analysis - Volume Spread Analysis
+    // Compare delta magnitude to price spread
+    const lastCandle = recent[0];
+    const priceSpread = Math.abs((lastCandle?.price_high || 0) - (lastCandle?.price_low || 0));
+    const deltaSpread = Math.abs((lastCandle?.delta_high || 0) - (lastCandle?.delta_low || 0));
+    const netDelta = lastCandle?.delta || 0;
+
+    let vsa = {
+      spread: priceSpread.toFixed(2),
+      deltaRange: deltaSpread,
+      netDelta: netDelta,
+      signal: 'NEUTRAL'
+    };
+
+    // High delta, low spread = Absorption (strong hands accumulating/distributing)
+    if (deltaSpread > 200 && priceSpread < 5) {
+      vsa.signal = netDelta > 0 ? 'BULLISH_ABSORPTION' : 'BEARISH_ABSORPTION';
+    }
+    // High spread, high delta in same direction = Follow through
+    else if (priceSpread > 10 && Math.abs(netDelta) > 100) {
+      vsa.signal = netDelta > 0 ? 'BULLISH_FOLLOW' : 'BEARISH_FOLLOW';
+    }
+    // High spread, low delta = Exhaustion
+    else if (priceSpread > 10 && Math.abs(netDelta) < 50) {
+      vsa.signal = 'EXHAUSTION_MOVE';
+    }
+
+    return {
+      regime,
+      regimeStrength,
+      divergence,
+      vsa,
+      cvdTrend,
+      priceTrend: priceChange,
+      priceChangePercent,
+      recentCvd,
+      history: recent
+    };
+  }, [metrics.volume_5m?.history]);
   
   // Reference levels - includes GEX levels (Call Wall, Put Wall, Gamma Flip)
   const referenceLevels = [
@@ -135,9 +259,9 @@ const PriceLadder = ({ metrics, gexData }) => {
 
       <div style={{
         display: 'grid',
-        gridTemplateColumns: '1fr 300px 1fr',
+        gridTemplateColumns: '1fr 300px 1fr 1fr',
         gap: 24,
-        maxWidth: 1200,
+        maxWidth: 1600,
         margin: '0 auto'
       }}>
         
@@ -418,6 +542,307 @@ const PriceLadder = ({ metrics, gexData }) => {
             <div style={{ color: '#666', fontSize: 10, marginTop: 4 }}>
               Updated: {gexData.last_update || '--:--:--'}
             </div>
+          </div>
+        </div>
+
+        {/* ORDER FLOW ANALYSIS PANEL - Fabio's Model */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16
+        }}>
+          {/* Market Regime - Distribution/Accumulation */}
+          <div style={{
+            background: orderFlowAnalysis.regime === 'DISTRIBUTION'
+              ? 'rgba(255,68,102,0.15)'
+              : orderFlowAnalysis.regime === 'ACCUMULATION'
+                ? 'rgba(0,255,136,0.15)'
+                : 'rgba(255,255,255,0.02)',
+            border: `2px solid ${
+              orderFlowAnalysis.regime === 'DISTRIBUTION'
+                ? '#ff4466'
+                : orderFlowAnalysis.regime === 'ACCUMULATION'
+                  ? '#00ff88'
+                  : 'rgba(255,255,255,0.1)'
+            }`,
+            borderRadius: 12,
+            padding: 16,
+            textAlign: 'center'
+          }}>
+            <div style={{ color: '#888', fontSize: 10, marginBottom: 8, letterSpacing: 2 }}>MARKET REGIME</div>
+            <div style={{
+              fontSize: 24,
+              fontWeight: 700,
+              color: orderFlowAnalysis.regime === 'DISTRIBUTION'
+                ? '#ff4466'
+                : orderFlowAnalysis.regime === 'ACCUMULATION'
+                  ? '#00ff88'
+                  : '#888',
+              fontFamily: "'JetBrains Mono', monospace",
+              textShadow: orderFlowAnalysis.regime !== 'BALANCED'
+                ? `0 0 20px ${orderFlowAnalysis.regime === 'DISTRIBUTION' ? 'rgba(255,68,102,0.5)' : 'rgba(0,255,136,0.5)'}`
+                : 'none'
+            }}>
+              {orderFlowAnalysis.regime === 'DISTRIBUTION' ? '📉' : orderFlowAnalysis.regime === 'ACCUMULATION' ? '📈' : '⚖️'} {orderFlowAnalysis.regime}
+            </div>
+            <div style={{ color: '#666', fontSize: 11, marginTop: 8 }}>
+              {orderFlowAnalysis.regime === 'DISTRIBUTION'
+                ? 'Sellers building pressure - expect downside'
+                : orderFlowAnalysis.regime === 'ACCUMULATION'
+                  ? 'Buyers building pressure - expect upside'
+                  : 'No clear directional pressure'}
+            </div>
+            {orderFlowAnalysis.regimeStrength > 0 && (
+              <div style={{
+                marginTop: 12,
+                height: 6,
+                background: 'rgba(0,0,0,0.3)',
+                borderRadius: 3,
+                overflow: 'hidden'
+              }}>
+                <div style={{
+                  width: `${orderFlowAnalysis.regimeStrength}%`,
+                  height: '100%',
+                  background: orderFlowAnalysis.regime === 'DISTRIBUTION' ? '#ff4466' : '#00ff88',
+                  borderRadius: 3,
+                  transition: 'width 0.5s ease'
+                }} />
+              </div>
+            )}
+          </div>
+
+          {/* CVD Trend Indicator */}
+          <div style={{
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 12,
+            padding: 16
+          }}>
+            <div style={{ color: '#888', fontSize: 10, marginBottom: 12, letterSpacing: 2 }}>CVD TREND (50min)</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <span style={{ color: '#888', fontSize: 11 }}>CVD Change</span>
+              <span style={{
+                color: orderFlowAnalysis.cvdTrend >= 0 ? '#00ff88' : '#ff4466',
+                fontFamily: 'monospace',
+                fontWeight: 700,
+                fontSize: 16
+              }}>
+                {orderFlowAnalysis.cvdTrend >= 0 ? '+' : ''}{orderFlowAnalysis.cvdTrend?.toLocaleString() || 0}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <span style={{ color: '#888', fontSize: 11 }}>Price Change</span>
+              <span style={{
+                color: orderFlowAnalysis.priceTrend >= 0 ? '#00ff88' : '#ff4466',
+                fontFamily: 'monospace',
+                fontWeight: 700,
+                fontSize: 16
+              }}>
+                {orderFlowAnalysis.priceTrend >= 0 ? '+' : ''}{orderFlowAnalysis.priceTrend?.toFixed(2) || '0.00'}
+              </span>
+            </div>
+            <div style={{
+              padding: '8px 12px',
+              background: orderFlowAnalysis.cvdTrend * orderFlowAnalysis.priceTrend < 0
+                ? 'rgba(255,170,0,0.2)'
+                : 'rgba(0,255,136,0.1)',
+              borderRadius: 8,
+              textAlign: 'center'
+            }}>
+              <span style={{
+                color: orderFlowAnalysis.cvdTrend * orderFlowAnalysis.priceTrend < 0 ? '#ffaa00' : '#00ff88',
+                fontSize: 11,
+                fontWeight: 600
+              }}>
+                {orderFlowAnalysis.cvdTrend * orderFlowAnalysis.priceTrend < 0
+                  ? '⚠️ DIVERGENCE DETECTED'
+                  : '✓ CVD & Price Aligned'}
+              </span>
+            </div>
+          </div>
+
+          {/* Divergence Alert */}
+          {orderFlowAnalysis.divergence && (
+            <div style={{
+              background: orderFlowAnalysis.divergence.type === 'ABSORPTION'
+                ? 'rgba(0,170,255,0.15)'
+                : orderFlowAnalysis.divergence.direction === 'BULLISH'
+                  ? 'rgba(0,255,136,0.15)'
+                  : 'rgba(255,68,102,0.15)',
+              border: `2px solid ${
+                orderFlowAnalysis.divergence.type === 'ABSORPTION'
+                  ? '#00aaff'
+                  : orderFlowAnalysis.divergence.direction === 'BULLISH'
+                    ? '#00ff88'
+                    : '#ff4466'
+              }`,
+              borderRadius: 12,
+              padding: 16,
+              textAlign: 'center'
+            }}>
+              <div style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: orderFlowAnalysis.divergence.type === 'ABSORPTION'
+                  ? '#00aaff'
+                  : orderFlowAnalysis.divergence.direction === 'BULLISH'
+                    ? '#00ff88'
+                    : '#ff4466',
+                marginBottom: 8
+              }}>
+                🎯 {orderFlowAnalysis.divergence.type} - {orderFlowAnalysis.divergence.direction}
+              </div>
+              <div style={{ color: '#ccc', fontSize: 11 }}>
+                {orderFlowAnalysis.divergence.message}
+              </div>
+            </div>
+          )}
+
+          {/* VSA Analysis */}
+          <div style={{
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 12,
+            padding: 16
+          }}>
+            <div style={{ color: '#888', fontSize: 10, marginBottom: 12, letterSpacing: 2 }}>VSA ANALYSIS (Last 5m)</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={{ color: '#888', fontSize: 11 }}>Price Spread</span>
+              <span style={{ color: '#fff', fontFamily: 'monospace', fontSize: 13 }}>
+                ${orderFlowAnalysis.vsa?.spread || '0.00'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={{ color: '#888', fontSize: 11 }}>Delta Range</span>
+              <span style={{ color: '#fff', fontFamily: 'monospace', fontSize: 13 }}>
+                {orderFlowAnalysis.vsa?.deltaRange?.toLocaleString() || 0}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+              <span style={{ color: '#888', fontSize: 11 }}>Net Delta</span>
+              <span style={{
+                color: (orderFlowAnalysis.vsa?.netDelta || 0) >= 0 ? '#00ff88' : '#ff4466',
+                fontFamily: 'monospace',
+                fontSize: 13,
+                fontWeight: 600
+              }}>
+                {orderFlowAnalysis.vsa?.netDelta >= 0 ? '+' : ''}{orderFlowAnalysis.vsa?.netDelta || 0}
+              </span>
+            </div>
+            <div style={{
+              padding: '10px 12px',
+              background: orderFlowAnalysis.vsa?.signal?.includes('BULLISH')
+                ? 'rgba(0,255,136,0.15)'
+                : orderFlowAnalysis.vsa?.signal?.includes('BEARISH')
+                  ? 'rgba(255,68,102,0.15)'
+                  : 'rgba(255,170,0,0.1)',
+              borderRadius: 8,
+              textAlign: 'center'
+            }}>
+              <div style={{
+                color: orderFlowAnalysis.vsa?.signal?.includes('BULLISH')
+                  ? '#00ff88'
+                  : orderFlowAnalysis.vsa?.signal?.includes('BEARISH')
+                    ? '#ff4466'
+                    : '#ffaa00',
+                fontSize: 12,
+                fontWeight: 700
+              }}>
+                {orderFlowAnalysis.vsa?.signal === 'BULLISH_ABSORPTION' && '🟢 BULLISH ABSORPTION'}
+                {orderFlowAnalysis.vsa?.signal === 'BEARISH_ABSORPTION' && '🔴 BEARISH ABSORPTION'}
+                {orderFlowAnalysis.vsa?.signal === 'BULLISH_FOLLOW' && '🟢 BULLISH FOLLOW-THROUGH'}
+                {orderFlowAnalysis.vsa?.signal === 'BEARISH_FOLLOW' && '🔴 BEARISH FOLLOW-THROUGH'}
+                {orderFlowAnalysis.vsa?.signal === 'EXHAUSTION_MOVE' && '⚠️ EXHAUSTION MOVE'}
+                {orderFlowAnalysis.vsa?.signal === 'NEUTRAL' && '— NEUTRAL'}
+              </div>
+              <div style={{ color: '#888', fontSize: 10, marginTop: 4 }}>
+                {orderFlowAnalysis.vsa?.signal?.includes('ABSORPTION') && 'Strong hands absorbing pressure'}
+                {orderFlowAnalysis.vsa?.signal?.includes('FOLLOW') && 'Momentum following through'}
+                {orderFlowAnalysis.vsa?.signal === 'EXHAUSTION_MOVE' && 'Price move without conviction'}
+                {orderFlowAnalysis.vsa?.signal === 'NEUTRAL' && 'No clear signal'}
+              </div>
+            </div>
+          </div>
+
+          {/* Big Trades Panel */}
+          <div style={{
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 12,
+            padding: 16
+          }}>
+            <div style={{ color: '#888', fontSize: 10, marginBottom: 12, letterSpacing: 2 }}>BIG TRADES</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={{ color: '#888', fontSize: 11 }}>Buy Volume</span>
+              <span style={{ color: '#00ff88', fontFamily: 'monospace', fontSize: 13, fontWeight: 600 }}>
+                {(metrics.big_trades_buy || 0).toLocaleString()}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={{ color: '#888', fontSize: 11 }}>Sell Volume</span>
+              <span style={{ color: '#ff4466', fontFamily: 'monospace', fontSize: 13, fontWeight: 600 }}>
+                {(metrics.big_trades_sell || 0).toLocaleString()}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+              <span style={{ color: '#888', fontSize: 11 }}>Net Delta</span>
+              <span style={{
+                color: (metrics.big_trades_delta || 0) >= 0 ? '#00ff88' : '#ff4466',
+                fontFamily: 'monospace',
+                fontSize: 16,
+                fontWeight: 700
+              }}>
+                {(metrics.big_trades_delta || 0) >= 0 ? '+' : ''}{(metrics.big_trades_delta || 0).toLocaleString()}
+              </span>
+            </div>
+
+            {/* Recent Big Trades */}
+            <div style={{
+              maxHeight: 120,
+              overflowY: 'auto',
+              borderTop: '1px solid rgba(255,255,255,0.1)',
+              paddingTop: 8
+            }}>
+              <div style={{ color: '#666', fontSize: 9, marginBottom: 6 }}>RECENT TRADES</div>
+              {(metrics.big_trades || []).slice(0, 5).map((trade, idx) => (
+                <div key={idx} style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '4px 0',
+                  borderBottom: idx < 4 ? '1px solid rgba(255,255,255,0.05)' : 'none'
+                }}>
+                  <span style={{
+                    color: trade.side === 'BUY' ? '#00ff88' : '#ff4466',
+                    fontSize: 10,
+                    fontWeight: 600
+                  }}>
+                    {trade.side === 'BUY' ? '▲' : '▼'} {trade.size}
+                  </span>
+                  <span style={{ color: '#888', fontSize: 10, fontFamily: 'monospace' }}>
+                    ${trade.price?.toFixed(2)}
+                  </span>
+                </div>
+              ))}
+              {(!metrics.big_trades || metrics.big_trades.length === 0) && (
+                <div style={{ color: '#555', fontSize: 10, textAlign: 'center' }}>No big trades yet</div>
+              )}
+            </div>
+          </div>
+
+          {/* Quick Reference */}
+          <div style={{
+            background: 'rgba(255,255,255,0.02)',
+            border: '1px solid rgba(255,255,255,0.05)',
+            borderRadius: 8,
+            padding: 12,
+            fontSize: 10,
+            color: '#666'
+          }}>
+            <div style={{ fontWeight: 600, marginBottom: 6, color: '#888' }}>ORDER FLOW GUIDE</div>
+            <div>📉 <b style={{color:'#ff4466'}}>Distribution</b>: CVD falling, price balanced → Short</div>
+            <div>📈 <b style={{color:'#00ff88'}}>Accumulation</b>: CVD rising, price balanced → Long</div>
+            <div>🎯 <b style={{color:'#00aaff'}}>Absorption</b>: High delta, no price move → Reversal</div>
           </div>
         </div>
       </div>

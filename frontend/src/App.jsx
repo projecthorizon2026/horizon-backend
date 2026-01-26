@@ -3948,6 +3948,440 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
         </div>
       </div>
 
+      {/* ORDER FLOW ANALYSIS - Fabio's Trading Model */}
+      {(() => {
+        const history = metrics.volume_5m?.history || [];
+        const needsMoreData = history.length < 5;
+
+        // Calculate CVD trend
+        const recent = history.slice(0, 10);
+        const older = history.slice(10, 20);
+        const recentCvd = recent.reduce((sum, c) => sum + (c.delta || 0), 0);
+        const olderCvd = older.reduce((sum, c) => sum + (c.delta || 0), 0);
+        const cvdTrend = recentCvd - olderCvd;
+
+        // Calculate price trend
+        const recentPriceStart = recent[recent.length - 1]?.price_open || 0;
+        const recentPriceEnd = recent[0]?.price_close || 0;
+        const priceChange = recentPriceEnd - recentPriceStart;
+        const priceChangePercent = recentPriceStart > 0 ? (priceChange / recentPriceStart) * 100 : 0;
+
+        // Determine regime
+        const cvdThreshold = 500;
+        const priceThreshold = 0.1;
+        let regime = 'BALANCED';
+        if (Math.abs(cvdTrend) > cvdThreshold) {
+          if (cvdTrend < -cvdThreshold && priceChangePercent > -priceThreshold) regime = 'DISTRIBUTION';
+          else if (cvdTrend > cvdThreshold && priceChangePercent < priceThreshold) regime = 'ACCUMULATION';
+        }
+
+        // VSA Analysis
+        const lastCandle = recent[0] || {};
+        const priceSpread = Math.abs((lastCandle.price_high || 0) - (lastCandle.price_low || 0));
+        const netDelta = lastCandle.delta || 0;
+        let vsaSignal = 'NEUTRAL';
+        if (Math.abs(netDelta) > 100 && priceSpread < 5) vsaSignal = netDelta > 0 ? 'BULL_ABSORPTION' : 'BEAR_ABSORPTION';
+        else if (priceSpread > 10 && Math.abs(netDelta) > 100) vsaSignal = netDelta > 0 ? 'BULL_FOLLOW' : 'BEAR_FOLLOW';
+
+        // Divergence check
+        const hasDivergence = cvdTrend * priceChange < 0 && Math.abs(cvdTrend) > cvdThreshold;
+
+        // Additional metrics for tooltip
+        const avgDeltaRecent = recent.length > 0 ? recentCvd / recent.length : 0;
+        const avgDeltaOlder = older.length > 0 ? olderCvd / older.length : 0;
+        const deltaAcceleration = avgDeltaRecent - avgDeltaOlder;
+        const bigTradesBuy = metrics.big_trades_buy || 0;
+        const bigTradesSell = metrics.big_trades_sell || 0;
+        const bigTradesCount = (metrics.big_trades || []).length;
+
+        // Custom tooltip state
+        const [showOrderFlowTooltip, setShowOrderFlowTooltip] = React.useState(false);
+
+        return (
+          <div style={{
+            maxWidth: 1400,
+            margin: '12px auto 0',
+            background: needsMoreData ? 'rgba(255,255,255,0.02)' : regime === 'DISTRIBUTION' ? 'rgba(255,68,102,0.08)' : regime === 'ACCUMULATION' ? 'rgba(0,255,136,0.08)' : 'rgba(255,255,255,0.02)',
+            border: `1px solid ${needsMoreData ? 'rgba(255,255,255,0.08)' : regime === 'DISTRIBUTION' ? 'rgba(255,68,102,0.3)' : regime === 'ACCUMULATION' ? 'rgba(0,255,136,0.3)' : 'rgba(255,255,255,0.08)'}`,
+            borderRadius: 8,
+            padding: 10
+          }}>
+            {/* Header with Click Tooltip */}
+            <div style={{ width: '100%' }}>
+              <div
+                style={{
+                  color: '#888',
+                  fontSize: 10,
+                  marginBottom: 8,
+                  letterSpacing: 1,
+                  fontWeight: 600,
+                  textAlign: 'center',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '100%',
+                  gap: 6
+                }}
+                onClick={() => setShowOrderFlowTooltip(!showOrderFlowTooltip)}
+              >
+                ORDER FLOW ANALYSIS
+                <span style={{
+                  fontSize: 10,
+                  color: showOrderFlowTooltip ? '#00aaff' : '#555',
+                  background: showOrderFlowTooltip ? 'rgba(0,170,255,0.2)' : 'rgba(255,255,255,0.1)',
+                  borderRadius: 10,
+                  padding: '1px 6px',
+                  transition: 'all 0.2s'
+                }}>ⓘ</span>
+                {needsMoreData && <span style={{ color: '#ffaa00' }}>• Collecting data ({history.length}/5 candles)</span>}
+              </div>
+
+              {/* Fixed Modal Tooltip */}
+              {showOrderFlowTooltip && (
+                <>
+                  {/* Backdrop */}
+                  <div
+                    style={{
+                      position: 'fixed',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      background: 'rgba(0,0,0,0.6)',
+                      zIndex: 99998
+                    }}
+                    onClick={() => setShowOrderFlowTooltip(false)}
+                  />
+                  {/* Modal */}
+                  <div style={{
+                    position: 'fixed',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    zIndex: 99999,
+                    width: 520,
+                    maxHeight: '80vh',
+                    overflowY: 'auto',
+                    background: '#12121a',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: 16,
+                    padding: 20,
+                    boxShadow: '0 25px 80px rgba(0,0,0,0.9)'
+                  }}>
+                  {/* Tooltip Header */}
+                  <div style={{
+                    borderBottom: '1px solid rgba(255,255,255,0.1)',
+                    paddingBottom: 12,
+                    marginBottom: 12
+                  }}>
+                    <div style={{
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: regime === 'DISTRIBUTION' ? '#ff4466' : regime === 'ACCUMULATION' ? '#00ff88' : '#00aaff',
+                      marginBottom: 6
+                    }}>
+                      {regime === 'DISTRIBUTION' ? '📉 DISTRIBUTION DETECTED' :
+                       regime === 'ACCUMULATION' ? '📈 ACCUMULATION DETECTED' :
+                       '⚖️ BALANCED / NO CLEAR REGIME'}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#888', lineHeight: 1.4 }}>
+                      {regime === 'DISTRIBUTION' ? 'Sellers building pressure while price holds - expect downside breakout' :
+                       regime === 'ACCUMULATION' ? 'Buyers building pressure while price holds - expect upside breakout' :
+                       'CVD and price moving together or no significant pressure detected'}
+                    </div>
+                  </div>
+
+                  {/* CVD Analysis Section */}
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 11, color: '#00aaff', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ width: 8, height: 8, background: '#00aaff', borderRadius: '50%' }}></span>
+                      CVD ANALYSIS (Cumulative Volume Delta)
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '6px 20px', fontSize: 11, paddingLeft: 14 }}>
+                      <div style={{ color: '#777' }}>Session CVD:</div>
+                      <div style={{ color: (metrics.cumulative_delta || 0) >= 0 ? '#00ff88' : '#ff4466', fontFamily: 'monospace', fontWeight: 700, fontSize: 13 }}>
+                        {(metrics.cumulative_delta || 0) >= 0 ? '+' : ''}{(metrics.cumulative_delta || 0).toLocaleString()}
+                      </div>
+                      <div style={{ color: '#777' }}>Recent CVD (10 bars):</div>
+                      <div style={{ color: recentCvd >= 0 ? '#00ff88' : '#ff4466', fontFamily: 'monospace', fontWeight: 600 }}>
+                        {recentCvd >= 0 ? '+' : ''}{recentCvd.toLocaleString()}
+                      </div>
+                      <div style={{ color: '#777' }}>Prior CVD (10 bars):</div>
+                      <div style={{ color: olderCvd >= 0 ? '#00ff88' : '#ff4466', fontFamily: 'monospace', fontWeight: 600 }}>
+                        {olderCvd >= 0 ? '+' : ''}{olderCvd.toLocaleString()}
+                      </div>
+                      <div style={{ color: '#777' }}>CVD Trend (Δ):</div>
+                      <div style={{ color: cvdTrend >= 0 ? '#00ff88' : '#ff4466', fontFamily: 'monospace', fontWeight: 700, fontSize: 13 }}>
+                        {cvdTrend >= 0 ? '+' : ''}{cvdTrend.toLocaleString()}
+                      </div>
+                      <div style={{ color: '#777' }}>Avg Delta/Bar:</div>
+                      <div style={{ color: avgDeltaRecent >= 0 ? '#00ff88' : '#ff4466', fontFamily: 'monospace' }}>
+                        {avgDeltaRecent >= 0 ? '+' : ''}{avgDeltaRecent.toFixed(0)}
+                      </div>
+                      <div style={{ color: '#777' }}>Regime Threshold:</div>
+                      <div style={{ color: '#999', fontFamily: 'monospace' }}>±{cvdThreshold}</div>
+                    </div>
+                  </div>
+
+                  {/* Price Analysis Section */}
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 11, color: '#ffaa00', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ width: 8, height: 8, background: '#ffaa00', borderRadius: '50%' }}></span>
+                      PRICE ANALYSIS
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '6px 20px', fontSize: 11, paddingLeft: 14 }}>
+                      <div style={{ color: '#777' }}>Current Price:</div>
+                      <div style={{ color: '#00aaff', fontFamily: 'monospace', fontWeight: 700, fontSize: 13 }}>
+                        ${(metrics.current_price || 0).toFixed(2)}
+                      </div>
+                      <div style={{ color: '#777' }}>50m Start Price:</div>
+                      <div style={{ color: '#fff', fontFamily: 'monospace' }}>
+                        {recentPriceStart > 0 ? `$${recentPriceStart.toFixed(2)}` : '—'}
+                      </div>
+                      <div style={{ color: '#777' }}>50m End Price:</div>
+                      <div style={{ color: '#fff', fontFamily: 'monospace' }}>
+                        {recentPriceEnd > 0 ? `$${recentPriceEnd.toFixed(2)}` : '—'}
+                      </div>
+                      <div style={{ color: '#777' }}>Price Change (50m):</div>
+                      <div style={{ color: priceChange >= 0 ? '#00ff88' : '#ff4466', fontFamily: 'monospace', fontWeight: 600 }}>
+                        {recentPriceStart > 0 ? `${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)} (${priceChangePercent >= 0 ? '+' : ''}${priceChangePercent.toFixed(3)}%)` : '—'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* VSA Section */}
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 11, color: '#a855f7', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ width: 8, height: 8, background: '#a855f7', borderRadius: '50%' }}></span>
+                      VSA (Volume Spread Analysis) - Last 5m Bar
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '6px 20px', fontSize: 11, paddingLeft: 14 }}>
+                      <div style={{ color: '#777' }}>Price Spread:</div>
+                      <div style={{ color: '#fff', fontFamily: 'monospace' }}>${priceSpread.toFixed(2)}</div>
+                      <div style={{ color: '#777' }}>Bar Delta:</div>
+                      <div style={{ color: netDelta >= 0 ? '#00ff88' : '#ff4466', fontFamily: 'monospace' }}>
+                        {netDelta >= 0 ? '+' : ''}{netDelta.toLocaleString()}
+                      </div>
+                      <div style={{ color: '#777' }}>Buy Volume:</div>
+                      <div style={{ color: '#00ff88', fontFamily: 'monospace' }}>{(lastCandle.buy || 0).toLocaleString()}</div>
+                      <div style={{ color: '#777' }}>Sell Volume:</div>
+                      <div style={{ color: '#ff4466', fontFamily: 'monospace' }}>{(lastCandle.sell || 0).toLocaleString()}</div>
+                      <div style={{ color: '#777' }}>Signal:</div>
+                      <div style={{
+                        color: vsaSignal.includes('BULL') ? '#00ff88' : vsaSignal.includes('BEAR') ? '#ff4466' : '#888',
+                        fontWeight: 700
+                      }}>
+                        {vsaSignal.replace('_', ' ')}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 10, color: '#888', marginTop: 8, padding: '6px 10px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, marginLeft: 14 }}>
+                      {vsaSignal.includes('ABSORPTION') ? '💡 High delta + Low spread = Strong hands absorbing pressure' :
+                       vsaSignal.includes('FOLLOW') ? '💡 High delta + High spread = Momentum follow-through' :
+                       '💡 No significant volume-price relationship detected'}
+                    </div>
+                  </div>
+
+                  {/* Big Trades Section */}
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 11, color: '#f97316', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ width: 8, height: 8, background: '#f97316', borderRadius: '50%' }}></span>
+                      BIG TRADES (≥10 contracts) - Institutional Activity
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '6px 20px', fontSize: 11, paddingLeft: 14 }}>
+                      <div style={{ color: '#777' }}>Big Buy Volume:</div>
+                      <div style={{ color: '#00ff88', fontFamily: 'monospace', fontWeight: 600 }}>{bigTradesBuy.toLocaleString()} contracts</div>
+                      <div style={{ color: '#777' }}>Big Sell Volume:</div>
+                      <div style={{ color: '#ff4466', fontFamily: 'monospace', fontWeight: 600 }}>{bigTradesSell.toLocaleString()} contracts</div>
+                      <div style={{ color: '#777' }}>Net Big Delta:</div>
+                      <div style={{
+                        color: (bigTradesBuy - bigTradesSell) >= 0 ? '#00ff88' : '#ff4466',
+                        fontFamily: 'monospace',
+                        fontWeight: 700,
+                        fontSize: 14
+                      }}>
+                        {(bigTradesBuy - bigTradesSell) >= 0 ? '+' : ''}{(bigTradesBuy - bigTradesSell).toLocaleString()}
+                      </div>
+                      <div style={{ color: '#777' }}>Trade Count:</div>
+                      <div style={{ color: '#fff', fontFamily: 'monospace' }}>{bigTradesCount} trades</div>
+                      <div style={{ color: '#777' }}>Imbalance:</div>
+                      <div style={{
+                        color: bigTradesBuy > bigTradesSell ? '#00ff88' : bigTradesSell > bigTradesBuy ? '#ff4466' : '#888',
+                        fontWeight: 600
+                      }}>
+                        {bigTradesBuy > bigTradesSell ? '🟢 BUYERS dominant' : bigTradesSell > bigTradesBuy ? '🔴 SELLERS dominant' : '— Balanced'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Divergence Section */}
+                  <div style={{
+                    background: hasDivergence ? 'rgba(255,170,0,0.15)' : 'rgba(0,255,136,0.1)',
+                    borderRadius: 8,
+                    padding: 12
+                  }}>
+                    <div style={{ fontSize: 11, color: hasDivergence ? '#ffaa00' : '#00ff88', fontWeight: 600, marginBottom: 6 }}>
+                      {hasDivergence ? '⚠️ DIVERGENCE DETECTED' : '✓ CVD & PRICE ALIGNED'}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#999', lineHeight: 1.4 }}>
+                      {hasDivergence
+                        ? `CVD trending ${cvdTrend > 0 ? 'UP' : 'DOWN'} while price moving ${priceChange > 0 ? 'UP' : 'DOWN'} - potential reversal signal`
+                        : 'CVD direction matches price direction - trend continuation likely'}
+                    </div>
+                  </div>
+
+                  {/* Footer */}
+                  <div style={{
+                    marginTop: 12,
+                    paddingTop: 10,
+                    borderTop: '1px solid rgba(255,255,255,0.1)',
+                    fontSize: 10,
+                    color: '#666',
+                    textAlign: 'center'
+                  }}>
+                    Based on Fabio's World Trading Championship model • {history.length} candles analyzed
+                  </div>
+                  {/* Close button */}
+                  <button
+                    onClick={() => setShowOrderFlowTooltip(false)}
+                    style={{
+                      position: 'absolute',
+                      top: 12,
+                      right: 12,
+                      background: 'rgba(255,255,255,0.1)',
+                      border: 'none',
+                      borderRadius: 6,
+                      color: '#888',
+                      cursor: 'pointer',
+                      padding: '4px 10px',
+                      fontSize: 12
+                    }}
+                  >✕</button>
+                </div>
+                </>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+              {/* Market Regime */}
+              <div style={{
+                flex: '0 0 auto',
+                background: regime === 'DISTRIBUTION' ? 'rgba(255,68,102,0.15)' : regime === 'ACCUMULATION' ? 'rgba(0,255,136,0.15)' : 'rgba(255,255,255,0.05)',
+                borderRadius: 6,
+                padding: '8px 16px',
+                textAlign: 'center',
+                border: `1px solid ${regime === 'DISTRIBUTION' ? '#ff446650' : regime === 'ACCUMULATION' ? '#00ff8850' : '#ffffff10'}`
+              }}>
+                <div style={{ fontSize: 9, color: '#666', marginBottom: 4 }}>REGIME</div>
+                <div style={{
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: regime === 'DISTRIBUTION' ? '#ff4466' : regime === 'ACCUMULATION' ? '#00ff88' : '#888'
+                }}>
+                  {regime === 'DISTRIBUTION' ? '📉' : regime === 'ACCUMULATION' ? '📈' : '⚖️'} {regime}
+                </div>
+              </div>
+
+              {/* CVD Trend */}
+              <div style={{
+                flex: '0 0 auto',
+                background: 'rgba(255,255,255,0.03)',
+                borderRadius: 6,
+                padding: '8px 16px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: 9, color: '#666', marginBottom: 4 }}>CVD TREND (50m)</div>
+                <div style={{
+                  fontSize: 14,
+                  fontWeight: 700,
+                  fontFamily: 'monospace',
+                  color: cvdTrend >= 0 ? '#00ff88' : '#ff4466'
+                }}>
+                  {cvdTrend >= 0 ? '+' : ''}{cvdTrend.toLocaleString()}
+                </div>
+              </div>
+
+              {/* Price Change */}
+              <div style={{
+                flex: '0 0 auto',
+                background: 'rgba(255,255,255,0.03)',
+                borderRadius: 6,
+                padding: '8px 16px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: 9, color: '#666', marginBottom: 4 }}>PRICE Δ</div>
+                <div style={{
+                  fontSize: 14,
+                  fontWeight: 700,
+                  fontFamily: 'monospace',
+                  color: priceChange >= 0 ? '#00ff88' : '#ff4466'
+                }}>
+                  {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)}
+                </div>
+              </div>
+
+              {/* Divergence Status */}
+              <div style={{
+                flex: '0 0 auto',
+                background: hasDivergence ? 'rgba(255,170,0,0.15)' : 'rgba(0,255,136,0.08)',
+                borderRadius: 6,
+                padding: '8px 16px',
+                textAlign: 'center',
+                border: hasDivergence ? '1px solid #ffaa0050' : '1px solid #00ff8830'
+              }}>
+                <div style={{ fontSize: 9, color: '#666', marginBottom: 4 }}>DIVERGENCE</div>
+                <div style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: hasDivergence ? '#ffaa00' : '#00ff88'
+                }}>
+                  {hasDivergence ? '⚠️ DETECTED' : '✓ ALIGNED'}
+                </div>
+              </div>
+
+              {/* VSA Signal */}
+              <div style={{
+                flex: '0 0 auto',
+                background: vsaSignal.includes('ABSORPTION') ? 'rgba(0,170,255,0.1)' : vsaSignal.includes('FOLLOW') ? 'rgba(0,255,136,0.1)' : 'rgba(255,255,255,0.03)',
+                borderRadius: 6,
+                padding: '8px 16px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: 9, color: '#666', marginBottom: 4 }}>VSA SIGNAL</div>
+                <div style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: vsaSignal.includes('BULL') ? '#00ff88' : vsaSignal.includes('BEAR') ? '#ff4466' : '#888'
+                }}>
+                  {vsaSignal === 'BULL_ABSORPTION' ? '🟢 ABSORPTION' :
+                   vsaSignal === 'BEAR_ABSORPTION' ? '🔴 ABSORPTION' :
+                   vsaSignal === 'BULL_FOLLOW' ? '🟢 FOLLOW' :
+                   vsaSignal === 'BEAR_FOLLOW' ? '🔴 FOLLOW' : '— NEUTRAL'}
+                </div>
+              </div>
+
+              {/* Big Trades Delta */}
+              <div style={{
+                flex: '0 0 auto',
+                background: 'rgba(255,255,255,0.03)',
+                borderRadius: 6,
+                padding: '8px 16px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: 9, color: '#666', marginBottom: 4 }}>BIG TRADES Δ</div>
+                <div style={{
+                  fontSize: 14,
+                  fontWeight: 700,
+                  fontFamily: 'monospace',
+                  color: (metrics.big_trades_delta || 0) >= 0 ? '#00ff88' : '#ff4466'
+                }}>
+                  {(metrics.big_trades_delta || 0) >= 0 ? '+' : ''}{(metrics.big_trades_delta || 0).toLocaleString()}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Gold Institutional Data - Show for Gold contracts */}
       {metrics?.contract !== 'BTC-SPOT' && (
         <div style={{
