@@ -21231,11 +21231,13 @@ const ContractDropdown = ({ selectedContract, onContractChange, contracts, isMob
 // Floating Footer Component - Shows contract, time, price (responsive)
 const FloatingFooter = ({ globalData, selectedContract, onContractChange, contracts, isMobile }) => {
   // Check for any live or connected data source
-  // Accept DATABENTO_LIVE, BINANCE_WS, *_SPOT, WAITING_CONNECTION_SLOT (backend ready), and fallback sources
+  // LIVE = actively receiving data (DATABENTO_LIVE, BINANCE_WS, YFINANCE, etc.)
+  // RECONNECTING = waiting for connection (RECONNECTING, WAITING_CONNECTION_SLOT, INITIALIZING)
+  // OFFLINE = no connection possible
   const offlineStates = ['DISCONNECTED', 'NO_DATABENTO_LIB', 'NO_API_KEY', 'ERROR'];
+  const waitingStates = ['INITIALIZING', 'SWITCHING...', 'WAITING_CONNECTION_SLOT', 'RESETTING...'];
   const isReconnecting = globalData?.data_source?.includes('RECONNECTING') ||
-                         globalData?.data_source === 'INITIALIZING' ||
-                         globalData?.data_source === 'SWITCHING...';
+                         waitingStates.includes(globalData?.data_source);
   const isLive = globalData?.data_source &&
     !offlineStates.includes(globalData.data_source) &&
     !isReconnecting;
@@ -21755,9 +21757,14 @@ const App = () => {
           const data = await response.json();
 
           // Check if data source is actually live (not just HTTP OK)
-          const isLiveData = data.data_source && data.data_source !== 'DISCONNECTED' &&
-                            !data.data_source.includes('RECONNECTING') && data.data_source !== 'INITIALIZING';
-          const isReconnecting = data.data_source && data.data_source.includes('RECONNECTING');
+          const waitingStates = ['INITIALIZING', 'SWITCHING...', 'WAITING_CONNECTION_SLOT', 'RESETTING...', 'DISCONNECTED'];
+          const isLiveData = data.data_source &&
+                            !waitingStates.includes(data.data_source) &&
+                            !data.data_source.includes('RECONNECTING');
+          const isReconnecting = data.data_source &&
+                                (data.data_source.includes('RECONNECTING') ||
+                                 data.data_source === 'WAITING_CONNECTION_SLOT' ||
+                                 data.data_source === 'INITIALIZING');
 
           setGlobalData({
             contract: data.contract || 'GCG26',
