@@ -4036,36 +4036,15 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                 {needsMoreData && <span style={{ color: '#ffaa00' }}>• Collecting data ({history.length}/5 candles)</span>}
               </div>
 
-              {/* Fixed Modal Tooltip - Portal to body */}
-              {showOrderFlowTooltip && createPortal(
-                <>
-                  {/* Backdrop - covers entire screen */}
-                  <div
-                    style={{
-                      position: 'fixed',
-                      inset: 0,
-                      background: '#000',
-                      opacity: 0.92,
-                      zIndex: 9999998
-                    }}
-                    onClick={() => setShowOrderFlowTooltip(false)}
-                  />
-                  {/* Modal */}
-                  <div style={{
-                    position: 'fixed',
-                    top: '50%',
-                    left: '50%',
-                    transform: 'translate(-50%, -50%)',
-                    zIndex: 9999999,
-                    width: 520,
-                    maxHeight: '80vh',
-                    overflowY: 'auto',
-                    background: '#12121a',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    borderRadius: 16,
-                    padding: 20,
-                    boxShadow: '0 25px 80px rgba(0,0,0,0.9)'
-                  }}>
+              {/* Inline Expandable Details */}
+              {showOrderFlowTooltip && (
+                <div style={{
+                  marginTop: 12,
+                  background: '#0a0a12',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: 12,
+                  padding: 16
+                }}>
                   {/* Tooltip Header */}
                   <div style={{
                     borderBottom: '1px solid rgba(255,255,255,0.1)',
@@ -4238,25 +4217,7 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                   }}>
                     Based on Fabio's World Trading Championship model • {history.length} candles analyzed
                   </div>
-                  {/* Close button */}
-                  <button
-                    onClick={() => setShowOrderFlowTooltip(false)}
-                    style={{
-                      position: 'absolute',
-                      top: 12,
-                      right: 12,
-                      background: 'rgba(255,255,255,0.1)',
-                      border: 'none',
-                      borderRadius: 6,
-                      color: '#888',
-                      cursor: 'pointer',
-                      padding: '4px 10px',
-                      fontSize: 12
-                    }}
-                  >✕</button>
                 </div>
-                </>,
-                document.body
               )}
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
