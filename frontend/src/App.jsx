@@ -1350,6 +1350,7 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
   const [showGammaLevels, setShowGammaLevels] = useState(false);
   const [showPhaseChart, setShowPhaseChart] = useState(false); // Phase Chart collapsed by default
   const [showPhaseTooltip, setShowPhaseTooltip] = useState(false); // For detailed phase tooltip
+  const [showOrderFlowTooltip, setShowOrderFlowTooltip] = useState(false); // For Order Flow Analysis modal
   const [hoveredChartCandle, setHoveredChartCandle] = useState(null); // For crosshair
   const [hoveredFootprintLevel, setHoveredFootprintLevel] = useState(null); // For footprint chart tooltips
   const [footprintExpanded, setFootprintExpanded] = useState(false); // For expanded modal
@@ -3994,9 +3995,6 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
         const bigTradesBuy = metrics.big_trades_buy || 0;
         const bigTradesSell = metrics.big_trades_sell || 0;
         const bigTradesCount = (metrics.big_trades || []).length;
-
-        // Custom tooltip state
-        const [showOrderFlowTooltip, setShowOrderFlowTooltip] = React.useState(false);
 
         return (
           <div style={{
