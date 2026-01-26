@@ -1349,6 +1349,8 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
   const [sessionFilter, setSessionFilter] = useState('all'); // 'all', 'japan', 'london', 'us', etc.
   const [showGammaLevels, setShowGammaLevels] = useState(false);
   const [showPhaseChart, setShowPhaseChart] = useState(false); // Phase Chart collapsed by default
+  const [showOHLCCharts, setShowOHLCCharts] = useState(true); // Price/Delta OHLC charts visible by default
+  const [hoveredBigTrade, setHoveredBigTrade] = useState(null); // For big trade bubble tooltip
   const [showPhaseTooltip, setShowPhaseTooltip] = useState(false); // For detailed phase tooltip
   const [showOrderFlowTooltip, setShowOrderFlowTooltip] = useState(false); // For Order Flow Analysis modal
   const [hoveredChartCandle, setHoveredChartCandle] = useState(null); // For crosshair
@@ -3795,6 +3797,29 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
 
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                {/* OHLC Charts Header with Toggle */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <span style={{ color: '#888', fontSize: 10, fontWeight: 600, letterSpacing: 1 }}>
+                    PRICE & DELTA CHARTS
+                  </span>
+                  <button
+                    onClick={() => setShowOHLCCharts(!showOHLCCharts)}
+                    style={{
+                      background: showOHLCCharts ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      borderRadius: 4,
+                      padding: '3px 8px',
+                      fontSize: 9,
+                      color: '#888',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {showOHLCCharts ? 'Hide Charts' : 'Show Charts'}
+                  </button>
+                </div>
+
+                {showOHLCCharts && (
+                <>
                 {/* Price OHLC */}
                 <div style={{
                   background: 'rgba(255,255,255,0.02)',
@@ -3853,6 +3878,254 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                         </div>
                       );
                     })}
+
+                    {/* Big Trades Bubble Overlay */}
+                    {(() => {
+                      const bigTrades = metrics.big_trades || [];
+                      if (bigTrades.length === 0) return null;
+
+                      const candleWidth = 100 / allCandles.length; // Percentage width per candle
+
+                      // Get visible time range
+                      const visibleCandles = allCandles.filter(c => c.ts > 0);
+                      const minTs = visibleCandles.length > 0 ? Math.min(...visibleCandles.map(c => c.ts)) : 0;
+                      const maxTs = visibleCandles.length > 0 ? Math.max(...visibleCandles.map(c => c.ts)) + 300 : 0;
+
+                      // Filter trades within visible range
+                      const visibleTrades = bigTrades.filter(t => t.ts >= minTs && t.ts <= maxTs);
+
+                      // Calculate notional value per contract (GC = 100 oz)
+                      const contractMultipliers = { GC: 100, NQ: 20, ES: 50, CL: 1000, BTC: 1 };
+                      const assetClass = metrics.asset_class || 'GC';
+                      const multiplier = contractMultipliers[assetClass] || 100;
+                      const avgTradeSize = metrics.threshold_stats?.avg_size || 3;
+                      const threshold = metrics.big_trade_threshold || 10;
+
+                      return (
+                        <>
+                        <svg
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            height: chartHeight,
+                            pointerEvents: 'none',
+                            zIndex: 20,
+                            overflow: 'visible'
+                          }}
+                        >
+                          {/* Gradient Definitions for Glass Bubbles */}
+                          <defs>
+                            {/* Buy Gradient - Green */}
+                            <radialGradient id="buyGradient" cx="30%" cy="30%" r="70%">
+                              <stop offset="0%" stopColor="#88ffcc" stopOpacity="0.9" />
+                              <stop offset="40%" stopColor="#00ff88" stopOpacity="0.7" />
+                              <stop offset="100%" stopColor="#006633" stopOpacity="0.5" />
+                            </radialGradient>
+                            <radialGradient id="buyGradientHover" cx="30%" cy="30%" r="70%">
+                              <stop offset="0%" stopColor="#ccffee" stopOpacity="1" />
+                              <stop offset="30%" stopColor="#44ffaa" stopOpacity="0.9" />
+                              <stop offset="100%" stopColor="#00cc66" stopOpacity="0.7" />
+                            </radialGradient>
+                            {/* Sell Gradient - Red */}
+                            <radialGradient id="sellGradient" cx="30%" cy="30%" r="70%">
+                              <stop offset="0%" stopColor="#ffaaaa" stopOpacity="0.9" />
+                              <stop offset="40%" stopColor="#ff4466" stopOpacity="0.7" />
+                              <stop offset="100%" stopColor="#881133" stopOpacity="0.5" />
+                            </radialGradient>
+                            <radialGradient id="sellGradientHover" cx="30%" cy="30%" r="70%">
+                              <stop offset="0%" stopColor="#ffdddd" stopOpacity="1" />
+                              <stop offset="30%" stopColor="#ff6688" stopOpacity="0.9" />
+                              <stop offset="100%" stopColor="#cc2244" stopOpacity="0.7" />
+                            </radialGradient>
+                            {/* Glow filters */}
+                            <filter id="buyGlow" x="-50%" y="-50%" width="200%" height="200%">
+                              <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                              <feMerge>
+                                <feMergeNode in="coloredBlur"/>
+                                <feMergeNode in="SourceGraphic"/>
+                              </feMerge>
+                            </filter>
+                            <filter id="sellGlow" x="-50%" y="-50%" width="200%" height="200%">
+                              <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                              <feMerge>
+                                <feMergeNode in="coloredBlur"/>
+                                <feMergeNode in="SourceGraphic"/>
+                              </feMerge>
+                            </filter>
+                          </defs>
+                          {visibleTrades.map((trade, i) => {
+                            // Find which candle this trade belongs to (by timestamp)
+                            const tradeTime = trade.ts;
+                            const candleIndex = allCandles.findIndex(c => {
+                              if (!c.ts) return false;
+                              const candleStart = c.ts;
+                              const candleEnd = candleStart + 5 * 60; // 5 min candle in seconds
+                              return tradeTime >= candleStart && tradeTime < candleEnd;
+                            });
+
+                            if (candleIndex === -1) return null;
+
+                            // X position: center of the candle (percentage-based)
+                            const xPercent = (candleIndex + 0.5) * candleWidth;
+
+                            // Y position: map trade price to chart Y coordinate
+                            const y = priceToY(trade.price);
+
+                            // Radius: proportional to trade size (sqrt for visual balance)
+                            const isHovered = hoveredBigTrade === i;
+                            const baseRadius = Math.min(22, Math.max(8, Math.sqrt(trade.size) * 2));
+                            const radius = isHovered ? baseRadius * 1.5 : baseRadius;
+
+                            // Gradient and color based on side
+                            const isBuy = trade.side === 'BUY';
+                            const gradientId = isBuy
+                              ? (isHovered ? 'url(#buyGradientHover)' : 'url(#buyGradient)')
+                              : (isHovered ? 'url(#sellGradientHover)' : 'url(#sellGradient)');
+                            const glowColor = isBuy ? '#00ff88' : '#ff4466';
+                            const strokeColor = isBuy ? '#00ff88' : '#ff4466';
+
+                            return (
+                              <g
+                                key={i}
+                                style={{ cursor: 'pointer', pointerEvents: 'auto' }}
+                                onMouseEnter={() => setHoveredBigTrade(i)}
+                                onMouseLeave={() => setHoveredBigTrade(null)}
+                              >
+                                {/* Outer glow ring */}
+                                <circle
+                                  cx={`${xPercent}%`}
+                                  cy={y}
+                                  r={radius + (isHovered ? 12 : 4)}
+                                  fill="none"
+                                  stroke={glowColor}
+                                  strokeWidth={isHovered ? 3 : 1}
+                                  strokeOpacity={isHovered ? 0.5 : 0.2}
+                                  style={{ transition: 'all 0.2s ease' }}
+                                />
+                                {/* Soft glow background */}
+                                <circle
+                                  cx={`${xPercent}%`}
+                                  cy={y}
+                                  r={radius + (isHovered ? 6 : 2)}
+                                  fill={glowColor}
+                                  fillOpacity={isHovered ? 0.25 : 0.1}
+                                  style={{ transition: 'all 0.2s ease' }}
+                                />
+                                {/* Main gradient bubble */}
+                                <circle
+                                  cx={`${xPercent}%`}
+                                  cy={y}
+                                  r={radius}
+                                  fill={gradientId}
+                                  stroke={isHovered ? '#ffffff' : strokeColor}
+                                  strokeWidth={isHovered ? 2 : 1}
+                                  filter={isHovered ? (isBuy ? 'url(#buyGlow)' : 'url(#sellGlow)') : 'none'}
+                                  style={{ transition: 'all 0.2s ease' }}
+                                />
+                                {/* Glass highlight - top shine */}
+                                <ellipse
+                                  cx={`${xPercent}%`}
+                                  cy={y - radius * 0.35}
+                                  rx={radius * 0.5}
+                                  ry={radius * 0.25}
+                                  fill="rgba(255,255,255,0.4)"
+                                  style={{ transition: 'all 0.2s ease' }}
+                                />
+                                {/* Volume label */}
+                                {(trade.size >= 10 || isHovered) && (
+                                  <text
+                                    x={`${xPercent}%`}
+                                    y={y + (isHovered ? 4 : 3)}
+                                    textAnchor="middle"
+                                    fontSize={isHovered ? 11 : 8}
+                                    fontWeight="bold"
+                                    fill="#fff"
+                                    style={{
+                                      transition: 'all 0.2s ease',
+                                      textShadow: '0 1px 2px rgba(0,0,0,0.8)'
+                                    }}
+                                  >
+                                    {trade.size >= 1000 ? `${(trade.size/1000).toFixed(1)}K` : trade.size}
+                                  </text>
+                                )}
+                              </g>
+                            );
+                          })}
+                          {/* Show count if trades exist but none in visible range */}
+                          {visibleTrades.length === 0 && bigTrades.length > 0 && (
+                            <text x="50%" y="20" textAnchor="middle" fontSize={9} fill="#666">
+                              {bigTrades.length} big trades (earlier periods)
+                            </text>
+                          )}
+                        </svg>
+
+                        {/* Hover Tooltip - positioned outside SVG */}
+                        {hoveredBigTrade !== null && visibleTrades[hoveredBigTrade] && (() => {
+                          const trade = visibleTrades[hoveredBigTrade];
+                          const notional = trade.size * trade.price * multiplier;
+                          const vsAvg = avgTradeSize > 0 ? (trade.size / avgTradeSize).toFixed(1) : '—';
+                          const tradeTime = new Date(trade.ts * 1000).toLocaleString('en-US', {
+                            timeZone: 'America/New_York',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            hour12: false
+                          });
+                          return (
+                            <div style={{
+                              position: 'absolute',
+                              top: 4,
+                              right: 4,
+                              background: 'rgba(10,10,20,0.95)',
+                              border: `2px solid ${trade.side === 'BUY' ? '#00ff88' : '#ff4466'}`,
+                              borderRadius: 8,
+                              padding: 10,
+                              zIndex: 100,
+                              minWidth: 180,
+                              boxShadow: `0 4px 20px ${trade.side === 'BUY' ? 'rgba(0,255,136,0.3)' : 'rgba(255,68,102,0.3)'}`
+                            }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: trade.side === 'BUY' ? '#00ff88' : '#ff4466', marginBottom: 6 }}>
+                                {trade.side === 'BUY' ? '🟢 BIG BUY' : '🔴 BIG SELL'}
+                              </div>
+                              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: '3px 8px', fontSize: 10 }}>
+                                <span style={{ color: '#666' }}>Size:</span>
+                                <span style={{ color: '#fff', fontWeight: 700 }}>{trade.size} contracts</span>
+                                <span style={{ color: '#666' }}>Price:</span>
+                                <span style={{ color: '#fff' }}>${trade.price.toFixed(2)}</span>
+                                <span style={{ color: '#666' }}>Notional:</span>
+                                <span style={{ color: '#ffaa00', fontWeight: 600 }}>${(notional / 1000000).toFixed(2)}M</span>
+                                <span style={{ color: '#666' }}>vs Average:</span>
+                                <span style={{ color: parseFloat(vsAvg) > 2 ? '#00ff88' : '#fff' }}>{vsAvg}x larger</span>
+                                <span style={{ color: '#666' }}>Time:</span>
+                                <span style={{ color: '#888' }}>{tradeTime} ET</span>
+                              </div>
+                              <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: 9, color: '#666' }}>
+                                Top 10% of trades by size
+                              </div>
+                            </div>
+                          );
+                        })()}
+                        </>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Big Trades Legend */}
+                  <div style={{ display: 'flex', gap: 12, justifyContent: 'center', alignItems: 'center', marginTop: 4, fontSize: 9 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#00ff88', opacity: 0.7 }} />
+                      <span style={{ color: '#888' }}>BIG BUY</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ff4466', opacity: 0.7 }} />
+                      <span style={{ color: '#888' }}>BIG SELL</span>
+                    </div>
+                    <span style={{ color: '#666' }}>|</span>
+                    <div style={{ color: '#f97316' }}>
+                      {(metrics.big_trades || []).length} trades ≥{metrics.big_trade_threshold || 10} (P90)
+                    </div>
                   </div>
                 </div>
 
@@ -3944,6 +4217,8 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                     })}
                   </div>
                 </div>
+                </>
+                )}
               </div>
             );
           })()}
@@ -4162,7 +4437,7 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                   <div style={{ marginBottom: 16 }}>
                     <div style={{ fontSize: 11, color: '#f97316', fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ width: 8, height: 8, background: '#f97316', borderRadius: '50%' }}></span>
-                      BIG TRADES (≥10 contracts) - Institutional Activity
+                      BIG TRADES (≥{metrics.big_trade_threshold || 10} contracts) - Institutional Activity
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: '6px 20px', fontSize: 11, paddingLeft: 14 }}>
                       <div style={{ color: '#777' }}>Big Buy Volume:</div>
@@ -4186,6 +4461,33 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                         fontWeight: 600
                       }}>
                         {bigTradesBuy > bigTradesSell ? '🟢 BUYERS dominant' : bigTradesSell > bigTradesBuy ? '🔴 SELLERS dominant' : '— Balanced'}
+                      </div>
+                    </div>
+
+                    {/* Threshold Calculation Stats */}
+                    <div style={{
+                      background: 'rgba(249,115,22,0.1)',
+                      border: '1px solid rgba(249,115,22,0.3)',
+                      borderRadius: 6,
+                      padding: 10,
+                      marginTop: 12,
+                      marginLeft: 14
+                    }}>
+                      <div style={{ fontSize: 10, color: '#f97316', fontWeight: 600, marginBottom: 6 }}>
+                        THRESHOLD CALCULATION (90th Percentile)
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: '4px 12px', fontSize: 10 }}>
+                        <div style={{ color: '#777' }}>Sample Size:</div>
+                        <div style={{ color: '#fff', fontFamily: 'monospace' }}>{(metrics.threshold_stats?.sample_count || 0).toLocaleString()} trades</div>
+                        <div style={{ color: '#777' }}>Average Trade:</div>
+                        <div style={{ color: '#fff', fontFamily: 'monospace' }}>{(metrics.threshold_stats?.avg_size || 0).toFixed(1)} contracts</div>
+                        <div style={{ color: '#777' }}>90th Percentile:</div>
+                        <div style={{ color: '#f97316', fontFamily: 'monospace', fontWeight: 700 }}>{metrics.threshold_stats?.p90_size || metrics.big_trade_threshold || 10} contracts</div>
+                        <div style={{ color: '#777' }}>Trade Range:</div>
+                        <div style={{ color: '#888', fontFamily: 'monospace' }}>{metrics.threshold_stats?.min_size || 1} - {metrics.threshold_stats?.max_size || '?'}</div>
+                      </div>
+                      <div style={{ fontSize: 9, color: '#666', marginTop: 8, fontStyle: 'italic' }}>
+                        Trades above 90th percentile are flagged as institutional activity
                       </div>
                     </div>
                   </div>
@@ -20930,10 +21232,17 @@ const ContractDropdown = ({ selectedContract, onContractChange, contracts, isMob
 const FloatingFooter = ({ globalData, selectedContract, onContractChange, contracts, isMobile }) => {
   // Check for any live or connected data source
   // Accept DATABENTO_LIVE, BINANCE_WS, *_SPOT, WAITING_CONNECTION_SLOT (backend ready), and fallback sources
-  const offlineStates = ['DISCONNECTED', 'INITIALIZING', 'RESETTING...', 'SWITCHING...', 'NO_DATABENTO_LIB', 'NO_API_KEY'];
+  const offlineStates = ['DISCONNECTED', 'NO_DATABENTO_LIB', 'NO_API_KEY', 'ERROR'];
+  const isReconnecting = globalData?.data_source?.includes('RECONNECTING') ||
+                         globalData?.data_source === 'INITIALIZING' ||
+                         globalData?.data_source === 'SWITCHING...';
   const isLive = globalData?.data_source &&
     !offlineStates.includes(globalData.data_source) &&
-    !globalData.data_source.includes('RECONNECTING');
+    !isReconnecting;
+
+  // Connection status: LIVE (green), RECONNECTING (yellow), OFFLINE (red)
+  const connectionStatus = isLive ? 'LIVE' : isReconnecting ? 'RECONNECTING' : 'OFFLINE';
+  const statusColor = isLive ? '#00ff88' : isReconnecting ? '#ffaa00' : '#ff4466';
 
   // Mobile: Two-line footer with full info
   if (isMobile) {
@@ -20965,14 +21274,14 @@ const FloatingFooter = ({ globalData, selectedContract, onContractChange, contra
 
           <div style={{
             padding: '6px 14px',
-            background: isLive ? 'rgba(0,255,136,0.15)' : 'rgba(255,255,255,0.03)',
-            border: `1px solid ${isLive ? 'rgba(0,255,136,0.4)' : 'rgba(255,255,255,0.1)'}`,
+            background: isLive ? 'rgba(0,255,136,0.15)' : isReconnecting ? 'rgba(255,170,0,0.1)' : 'rgba(255,255,255,0.03)',
+            border: `1px solid ${isLive ? 'rgba(0,255,136,0.4)' : isReconnecting ? 'rgba(255,170,0,0.3)' : 'rgba(255,255,255,0.1)'}`,
             borderRadius: 8,
           }}>
             <span style={{
               fontSize: 16,
               fontWeight: 700,
-              color: isLive ? '#00ff88' : '#666',
+              color: isLive ? '#00ff88' : isReconnecting ? '#ffaa00' : '#666',
               fontFamily: "'JetBrains Mono', monospace",
             }}>
               ${globalData?.current_price?.toFixed(2) || '----.--'}
@@ -21009,20 +21318,20 @@ const FloatingFooter = ({ globalData, selectedContract, onContractChange, contra
               width: 6,
               height: 6,
               borderRadius: '50%',
-              background: isLive ? '#00ff88' : '#ff4466',
-              boxShadow: isLive ? '0 0 6px #00ff88' : 'none',
-              animation: isLive ? 'pulse 2s infinite' : 'none'
+              background: statusColor,
+              boxShadow: `0 0 6px ${statusColor}`,
+              animation: (isLive || isReconnecting) ? 'pulse 2s infinite' : 'none'
             }} />
-            <span style={{ fontSize: 9, fontWeight: 700, color: isLive ? '#00ff88' : '#ff4466' }}>
-              {isLive ? 'LIVE' : 'OFFLINE'}
+            <span style={{ fontSize: 9, fontWeight: 700, color: statusColor }}>
+              {connectionStatus}
             </span>
           </div>
           <span style={{ color: '#444', fontSize: 9 }}>|</span>
           <span style={{ fontSize: 9, color: '#666' }}>
-            LATENCY: <span style={{ color: isLive ? '#00ff88' : '#666' }}>{isLive ? '~10ms' : '--'}</span>
+            LATENCY: <span style={{ color: isLive ? '#00ff88' : '#666' }}>{isLive ? '~10ms' : isReconnecting ? '...' : '--'}</span>
           </span>
           <span style={{ color: '#444', fontSize: 9 }}>|</span>
-          <span style={{ fontSize: 9, color: isLive ? '#00aaff' : '#666' }}>
+          <span style={{ fontSize: 9, color: isLive ? '#00aaff' : isReconnecting ? '#ffaa00' : '#666' }}>
             {globalData?.data_source || 'DISCONNECTED'}
           </span>
         </div>
@@ -21091,15 +21400,15 @@ const FloatingFooter = ({ globalData, selectedContract, onContractChange, contra
         <span style={{ fontSize: 11, color: '#666', textTransform: 'uppercase', letterSpacing: 1 }}>Price</span>
         <div style={{
           padding: '8px 20px',
-          background: isLive ? 'rgba(0,255,136,0.15)' : 'rgba(255,255,255,0.03)',
-          border: `1px solid ${isLive ? 'rgba(0,255,136,0.4)' : 'rgba(255,255,255,0.1)'}`,
+          background: isLive ? 'rgba(0,255,136,0.15)' : isReconnecting ? 'rgba(255,170,0,0.1)' : 'rgba(255,255,255,0.03)',
+          border: `1px solid ${isLive ? 'rgba(0,255,136,0.4)' : isReconnecting ? 'rgba(255,170,0,0.3)' : 'rgba(255,255,255,0.1)'}`,
           borderRadius: 6,
-          boxShadow: isLive ? '0 0 20px rgba(0,255,136,0.2)' : 'none'
+          boxShadow: isLive ? '0 0 20px rgba(0,255,136,0.2)' : isReconnecting ? '0 0 15px rgba(255,170,0,0.15)' : 'none'
         }}>
           <span style={{
             fontSize: 20,
             fontWeight: 700,
-            color: isLive ? '#00ff88' : '#666',
+            color: isLive ? '#00ff88' : isReconnecting ? '#ffaa00' : '#666',
             fontFamily: "'JetBrains Mono', monospace",
             textShadow: isLive ? '0 0 10px rgba(0,255,136,0.5)' : 'none'
           }}>
@@ -21138,27 +21447,27 @@ const FloatingFooter = ({ globalData, selectedContract, onContractChange, contra
             width: 6,
             height: 6,
             borderRadius: '50%',
-            background: isLive ? '#00ff88' : '#666',
-            boxShadow: isLive ? '0 0 6px #00ff88' : 'none',
-            animation: isLive ? 'pulse 2s infinite' : 'none'
+            background: statusColor,
+            boxShadow: `0 0 6px ${statusColor}`,
+            animation: (isLive || isReconnecting) ? 'pulse 2s infinite' : 'none'
           }} />
           <div style={{
             width: 6,
             height: 6,
             borderRadius: '50%',
-            background: isLive ? '#00ff88' : '#666',
-            boxShadow: isLive ? '0 0 6px #00ff88' : 'none',
-            animation: isLive ? 'pulse 2s infinite 0.3s' : 'none'
+            background: statusColor,
+            boxShadow: `0 0 6px ${statusColor}`,
+            animation: (isLive || isReconnecting) ? 'pulse 2s infinite 0.3s' : 'none'
           }} />
           <span style={{
             fontSize: 11,
             fontWeight: 700,
-            color: isLive ? '#00ff88' : '#666',
+            color: statusColor,
             marginLeft: 4,
             textTransform: 'uppercase',
             letterSpacing: 1
           }}>
-            {isLive ? 'LIVE' : 'OFFLINE'}
+            {connectionStatus}
           </span>
         </div>
 
@@ -21168,8 +21477,8 @@ const FloatingFooter = ({ globalData, selectedContract, onContractChange, contra
         {/* Latency */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 10, color: '#666', letterSpacing: 0.5 }}>LATENCY:</span>
-          <span style={{ fontSize: 11, color: '#00ff88', fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>
-            {isLive ? '~10ms' : '--'}
+          <span style={{ fontSize: 11, color: statusColor, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>
+            {isLive ? '~10ms' : isReconnecting ? '...' : '--'}
           </span>
           {isLive && (
             <span style={{
@@ -21184,6 +21493,19 @@ const FloatingFooter = ({ globalData, selectedContract, onContractChange, contra
               EXCELLENT
             </span>
           )}
+          {isReconnecting && (
+            <span style={{
+              fontSize: 9,
+              padding: '2px 6px',
+              background: 'rgba(255,170,0,0.2)',
+              border: '1px solid rgba(255,170,0,0.3)',
+              borderRadius: 3,
+              color: '#ffaa00',
+              fontWeight: 600
+            }}>
+              WAITING
+            </span>
+          )}
         </div>
 
         {/* Separator */}
@@ -21194,7 +21516,7 @@ const FloatingFooter = ({ globalData, selectedContract, onContractChange, contra
           <span style={{ fontSize: 10, color: '#666', letterSpacing: 0.5 }}>SOURCE:</span>
           <span style={{
             fontSize: 11,
-            color: isLive ? '#00aaff' : '#666',
+            color: isLive ? '#00aaff' : isReconnecting ? '#ffaa00' : '#666',
             fontWeight: 600,
             fontFamily: "'JetBrains Mono', monospace"
           }}>
