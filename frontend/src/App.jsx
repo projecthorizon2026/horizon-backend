@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, createContext, useContext, useRef, useCallback, memo, lazy, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 // Lightweight charts removed - using native TPO rendering
 import GEXPanel from './GEXPanel';
@@ -4037,8 +4038,8 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                 {needsMoreData && <span style={{ color: '#ffaa00' }}>• Collecting data ({history.length}/5 candles)</span>}
               </div>
 
-              {/* Fixed Modal Tooltip */}
-              {showOrderFlowTooltip && (
+              {/* Fixed Modal Tooltip - Portal to body */}
+              {showOrderFlowTooltip && createPortal(
                 <>
                   {/* Backdrop */}
                   <div
@@ -4048,8 +4049,8 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                       left: 0,
                       right: 0,
                       bottom: 0,
-                      background: 'rgba(0,0,0,0.6)',
-                      zIndex: 99998
+                      background: 'rgba(0,0,0,0.7)',
+                      zIndex: 999998
                     }}
                     onClick={() => setShowOrderFlowTooltip(false)}
                   />
@@ -4059,7 +4060,7 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                     top: '50%',
                     left: '50%',
                     transform: 'translate(-50%, -50%)',
-                    zIndex: 99999,
+                    zIndex: 999999,
                     width: 520,
                     maxHeight: '80vh',
                     overflowY: 'auto',
@@ -4258,7 +4259,8 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                     }}
                   >✕</button>
                 </div>
-                </>
+                </>,
+                document.body
               )}
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
