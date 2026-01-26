@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GEX Values for TradingView</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #0a0a1a 0%, #1a1a3a 100%);
+      color: white;
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    h1 {
+      text-align: center;
+      color: #22d3ee;
+      margin-bottom: 8px;
+      font-size: 28px;
+    }
+    .subtitle {
+      text-align: center;
+      color: #9ca3af;
+      margin-bottom: 32px;
+      font-size: 14px;
+    }
+    .card {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    .card-title {
+      font-size: 12px;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 16px;
+    }
+    .level-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .level-row:last-child { border-bottom: none; }
+    .level-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .level-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+    .level-name { font-weight: 500; }
+    .level-price {
+      font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+      font-size: 18px;
+      font-weight: bold;
+      cursor: pointer;
+      padding: 4px 12px;
+      border-radius: 6px;
+      transition: background 0.2s;
+    }
+    .level-price:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+    .level-price.copied {
+      background: rgba(34, 197, 94, 0.3);
+    }
+    .regime-badge {
+      display: inline-block;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-weight: bold;
+      font-size: 14px;
+      margin-bottom: 12px;
+    }
+    .regime-badge.positive {
+      background: rgba(34, 197, 94, 0.2);
+      color: #22c55e;
+      border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+    .regime-badge.negative {
+      background: rgba(239, 68, 68, 0.2);
+      color: #ef4444;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .copy-all-btn {
+      width: 100%;
+      padding: 16px;
+      background: linear-gradient(135deg, #22d3ee 0%, #0ea5e9 100%);
+      border: none;
+      border-radius: 8px;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .copy-all-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px rgba(34, 211, 238, 0.3);
+    }
+    .copy-all-btn:active {
+      transform: translateY(0);
+    }
+    .copy-all-btn.copied {
+      background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+    }
+    .instructions {
+      background: rgba(34, 211, 238, 0.1);
+      border: 1px solid rgba(34, 211, 238, 0.2);
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 20px;
+    }
+    .instructions h3 {
+      color: #22d3ee;
+      font-size: 14px;
+      margin-bottom: 12px;
+    }
+    .instructions ol {
+      padding-left: 20px;
+      font-size: 13px;
+      color: #d1d5db;
+      line-height: 1.8;
+    }
+    .status {
+      text-align: center;
+      font-size: 12px;
+      color: #6b7280;
+      margin-top: 16px;
+    }
+    .status.connected { color: #22c55e; }
+    .status.error { color: #ef4444; }
+    .last-update {
+      text-align: center;
+      font-size: 11px;
+      color: #4b5563;
+      margin-top: 8px;
+    }
+    .net-gex {
+      text-align: center;
+      margin-top: 12px;
+    }
+    .net-gex-label { font-size: 12px; color: #9ca3af; }
+    .net-gex-value {
+      font-size: 24px;
+      font-family: monospace;
+      font-weight: bold;
+    }
+    .net-gex-value.positive { color: #22c55e; }
+    .net-gex-value.negative { color: #ef4444; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>GEX Values</h1>
+    <p class="subtitle">Copy values to your TradingView indicator</p>
+
+    <!-- Regime -->
+    <div class="card" style="text-align: center;">
+      <div id="regime-badge" class="regime-badge">LOADING...</div>
+      <div class="net-gex">
+        <div class="net-gex-label">Net GEX Exposure</div>
+        <div id="net-gex" class="net-gex-value">-</div>
+      </div>
+    </div>
+
+    <!-- Levels -->
+    <div class="card">
+      <div class="card-title">GEX Levels (Click to Copy)</div>
+      <div id="levels"></div>
+    </div>
+
+    <!-- Copy All Button -->
+    <button id="copy-all" class="copy-all-btn">Copy All Values</button>
+
+    <!-- Instructions -->
+    <div class="instructions">
+      <h3>How to Update TradingView Indicator</h3>
+      <ol>
+        <li>Click "Copy All Values" or click individual prices</li>
+        <li>Open your TradingView chart with PH|UGS indicator</li>
+        <li>Open indicator settings (gear icon)</li>
+        <li>Go to "Gamma Exposure (GEX) Levels" section</li>
+        <li>Paste each value into the corresponding field</li>
+      </ol>
+    </div>
+
+    <div id="status" class="status">Connecting to Project Horizon...</div>
+    <div id="last-update" class="last-update"></div>
+  </div>
+
+  <script>
+    const API_BASE = 'http://localhost:8080';
+
+    const LEVELS = [
+      { key: 'call_wall', name: 'Call Wall', color: '#ef4444' },
+      { key: 'put_wall', name: 'Put Wall', color: '#22c55e' },
+      { key: 'gamma_flip', name: 'Gamma Flip', color: '#facc15', fallback: 'zero_gamma' },
+      { key: 'hvl', name: 'HVL', color: '#a855f7' },
+      { key: 'max_pain', name: 'Max Pain', color: '#f97316' },
+    ];
+
+    let gexData = {};
+
+    function copyToClipboard(text, element) {
+      navigator.clipboard.writeText(text).then(() => {
+        if (element) {
+          element.classList.add('copied');
+          setTimeout(() => element.classList.remove('copied'), 1000);
+        }
+      });
+    }
+
+    function updateUI(data) {
+      gexData = data;
+
+      // Regime
+      const regime = data.gamma_regime || 'UNKNOWN';
+      const regimeBadge = document.getElementById('regime-badge');
+      regimeBadge.textContent = regime + ' GAMMA';
+      regimeBadge.className = 'regime-badge ' + (regime === 'POSITIVE' ? 'positive' : 'negative');
+
+      // Net GEX
+      const netGex = document.getElementById('net-gex');
+      const totalGex = data.total_gex || 0;
+      netGex.textContent = (totalGex >= 0 ? '+' : '') + totalGex.toFixed(3) + 'B';
+      netGex.className = 'net-gex-value ' + (totalGex >= 0 ? 'positive' : 'negative');
+
+      // Levels
+      const levelsContainer = document.getElementById('levels');
+      levelsContainer.innerHTML = LEVELS.map(level => {
+        let price = data[level.key];
+        if (!price && level.fallback) price = data[level.fallback];
+        const priceStr = price ? price.toFixed(2) : '0.00';
+
+        return `
+          <div class="level-row">
+            <div class="level-info">
+              <div class="level-dot" style="background: ${level.color}"></div>
+              <span class="level-name">${level.name}</span>
+            </div>
+            <span class="level-price" onclick="copyToClipboard('${priceStr}', this)" title="Click to copy">${priceStr}</span>
+          </div>
+        `;
+      }).join('');
+
+      // Last update
+      document.getElementById('last-update').textContent = 'Last update: ' + new Date().toLocaleTimeString();
+    }
+
+    async function fetchData() {
+      try {
+        const response = await fetch(API_BASE);
+        const data = await response.json();
+        updateUI(data);
+        document.getElementById('status').textContent = 'Connected to Project Horizon';
+        document.getElementById('status').className = 'status connected';
+      } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('status').textContent = 'Connection error - Is Project Horizon running?';
+        document.getElementById('status').className = 'status error';
+      }
+    }
+
+    // Copy all values
+    document.getElementById('copy-all').addEventListener('click', function() {
+      const lines = LEVELS.map(level => {
+        let price = gexData[level.key];
+        if (!price && level.fallback) price = gexData[level.fallback];
+        return `${level.name}: ${price ? price.toFixed(2) : '0.00'}`;
+      });
+
+      const regime = gexData.gamma_regime || 'UNKNOWN';
+      const totalGex = gexData.total_gex || 0;
+
+      const text = `GEX Levels (${new Date().toLocaleString()})
+Regime: ${regime} GAMMA
+Net GEX: ${totalGex >= 0 ? '+' : ''}${totalGex.toFixed(3)}B
+
+${lines.join('\n')}`;
+
+      copyToClipboard(text, this);
+      this.textContent = 'Copied!';
+      this.classList.add('copied');
+      setTimeout(() => {
+        this.textContent = 'Copy All Values';
+        this.classList.remove('copied');
+      }, 2000);
+    });
+
+    // Start fetching
+    fetchData();
+    setInterval(fetchData, 1000);
+  </script>
+</body>
+</html>

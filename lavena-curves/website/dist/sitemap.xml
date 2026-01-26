@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+
+  <!-- Homepage -->
+  <url>
+    <loc>https://lumierecurves.shop/</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+    <image:image>
+      <image:loc>https://lumierecurves.shop/og-image.jpg</image:loc>
+      <image:title>Lumière Curves - Premium Plus-Size Lingerie</image:title>
+    </image:image>
+  </url>
+
+  <!-- Product Pages -->
+  <url>
+    <loc>https://lumierecurves.shop/product/wonderfully-full-cup</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+    <image:image>
+      <image:loc>https://lumierecurves.shop/products/images/wonderfully-1.jpg</image:loc>
+      <image:title>WonderFully Full Cup Side Support Bra</image:title>
+    </image:image>
+  </url>
+
+  <url>
+    <loc>https://lumierecurves.shop/product/spellbound-balcony</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+    <image:image>
+      <image:loc>https://lumierecurves.shop/products/images/spellbound-1.jpg</image:loc>
+      <image:title>Spellbound Balcony Bra</image:title>
+    </image:image>
+  </url>
+
+  <url>
+    <loc>https://lumierecurves.shop/product/lifestyle-plunge</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+    <image:image>
+      <image:loc>https://lumierecurves.shop/products/images/lifestyle-1.jpg</image:loc>
+      <image:title>Lifestyle Plunge Bra</image:title>
+    </image:image>
+  </url>
+
+  <url>
+    <loc>https://lumierecurves.shop/product/enclose-balcony</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+    <image:image>
+      <image:loc>https://lumierecurves.shop/products/images/enclose-1.jpg</image:loc>
+      <image:title>Enclose Balcony Side Support Bra</image:title>
+    </image:image>
+  </url>
+
+  <url>
+    <loc>https://lumierecurves.shop/product/superplunge-multiway</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+    <image:image>
+      <image:loc>https://lumierecurves.shop/products/images/superplunge-1.jpg</image:loc>
+      <image:title>Superplunge Multiway Bra</image:title>
+    </image:image>
+  </url>
+
+  <url>
+    <loc>https://lumierecurves.shop/product/smoothie-spacer</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+    <image:image>
+      <image:loc>https://lumierecurves.shop/products/images/smoothie-spacer-1.jpg</image:loc>
+      <image:title>Smoothie Spacer T-Shirt Plunge Bra</image:title>
+    </image:image>
+  </url>
+
+  <url>
+    <loc>https://lumierecurves.shop/product/suspense-plunge</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+    <image:image>
+      <image:loc>https://lumierecurves.shop/products/images/suspense-1.jpg</image:loc>
+      <image:title>Scantilly Suspense Plunge Bra</image:title>
+    </image:image>
+  </url>
+
+  <url>
+    <loc>https://lumierecurves.shop/product/smoothie-strapless</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+    <image:image>
+      <image:loc>https://lumierecurves.shop/products/images/smoothie-strapless-1.jpg</image:loc>
+      <image:title>Smoothie Strapless Moulded Bra</image:title>
+    </image:image>
+  </url>
+
+  <!-- Category Pages -->
+  <url>
+    <loc>https://lumierecurves.shop/collections/all</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <url>
+    <loc>https://lumierecurves.shop/collections/full-cup-bras</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <url>
+    <loc>https://lumierecurves.shop/collections/balcony-bras</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <url>
+    <loc>https://lumierecurves.shop/collections/plunge-bras</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <url>
+    <loc>https://lumierecurves.shop/collections/strapless-bras</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <!-- Info Pages -->
+  <url>
+    <loc>https://lumierecurves.shop/size-guide</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <url>
+    <loc>https://lumierecurves.shop/about</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+
+  <url>
+    <loc>https://lumierecurves.shop/contact</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+
+  <url>
+    <loc>https://lumierecurves.shop/shipping</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+
+  <url>
+    <loc>https://lumierecurves.shop/returns</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+
+  <url>
+    <loc>https://lumierecurves.shop/privacy-policy</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+
+  <url>
+    <loc>https://lumierecurves.shop/terms-of-service</loc>
+    <lastmod>2025-01-02</lastmod>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+
+</urlset>

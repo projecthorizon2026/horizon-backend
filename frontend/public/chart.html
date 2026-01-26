@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Horizon - GEX Chart Overlay</title>
+  <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a1a;
+      color: white;
+      min-height: 100vh;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 24px;
+      background: #12122a;
+      border-bottom: 1px solid #2a2a4a;
+    }
+    .logo { color: #22d3ee; font-size: 20px; font-weight: bold; }
+    .controls { display: flex; gap: 16px; align-items: center; }
+    .badge {
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+    .badge.positive { background: rgba(34, 197, 94, 0.2); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.3); }
+    .badge.negative { background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+    .main { display: flex; height: calc(100vh - 57px); }
+    .chart-area { flex: 1; padding: 16px; position: relative; }
+    #chart { width: 100%; height: 100%; border-radius: 8px; overflow: hidden; }
+    .sidebar {
+      width: 320px;
+      background: #12122a;
+      border-left: 1px solid #2a2a4a;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .sidebar h2 { font-size: 16px; margin-bottom: 16px; color: #d1d5db; }
+    .regime-card {
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+    .regime-card.positive { background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); }
+    .regime-card.negative { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); }
+    .regime-label { font-size: 12px; color: #9ca3af; margin-bottom: 4px; }
+    .regime-value { font-size: 24px; font-weight: bold; }
+    .regime-value.positive { color: #22c55e; }
+    .regime-value.negative { color: #ef4444; }
+    .regime-desc { font-size: 11px; color: #6b7280; margin-top: 8px; }
+    .levels { display: flex; flex-direction: column; gap: 12px; }
+    .level-card {
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid;
+    }
+    .level-card.red { background: rgba(239, 68, 68, 0.05); border-color: rgba(239, 68, 68, 0.3); }
+    .level-card.green { background: rgba(34, 197, 94, 0.05); border-color: rgba(34, 197, 94, 0.3); }
+    .level-card.yellow { background: rgba(250, 204, 21, 0.05); border-color: rgba(250, 204, 21, 0.3); }
+    .level-card.purple { background: rgba(168, 85, 247, 0.05); border-color: rgba(168, 85, 247, 0.3); }
+    .level-card.orange { background: rgba(249, 115, 22, 0.05); border-color: rgba(249, 115, 22, 0.3); }
+    .level-header { display: flex; justify-content: space-between; align-items: center; }
+    .level-name { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+    .level-name.red { color: #ef4444; }
+    .level-name.green { color: #22c55e; }
+    .level-name.yellow { color: #facc15; }
+    .level-name.purple { color: #a855f7; }
+    .level-name.orange { color: #f97316; }
+    .level-price { font-family: monospace; font-weight: bold; font-size: 14px; }
+    .level-desc { font-size: 11px; color: #6b7280; margin-top: 6px; }
+    .net-gex {
+      margin-top: 20px;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+    }
+    .net-gex-label { font-size: 12px; color: #9ca3af; margin-bottom: 4px; }
+    .net-gex-value { font-size: 28px; font-family: monospace; font-weight: bold; }
+    .net-gex-value.positive { color: #22c55e; }
+    .net-gex-value.negative { color: #ef4444; }
+    .legend {
+      position: absolute;
+      bottom: 32px;
+      left: 32px;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 12px 16px;
+      border-radius: 8px;
+      backdrop-filter: blur(8px);
+    }
+    .legend-title { font-size: 11px; color: #9ca3af; margin-bottom: 8px; font-weight: 600; }
+    .legend-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; }
+    .legend-item { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+    .legend-line { width: 16px; height: 2px; }
+    .legend-label { color: #d1d5db; }
+    .legend-value { color: white; font-family: monospace; }
+    .status { font-size: 11px; color: #4b5563; text-align: center; margin-top: 16px; }
+    .status.connected { color: #22c55e; }
+    .status.error { color: #ef4444; }
+    select {
+      background: #1f2937;
+      color: white;
+      border: 1px solid #374151;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    select:focus { outline: none; border-color: #22d3ee; }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <div style="display: flex; align-items: center; gap: 16px;">
+      <div class="logo">PROJECT HORIZON</div>
+      <span style="color: #4b5563;">|</span>
+      <span style="color: #9ca3af;">Live GEX Chart</span>
+    </div>
+    <div class="controls">
+      <select id="symbol">
+        <option value="GC">Gold (GC)</option>
+        <option value="ES">S&P 500 (ES)</option>
+        <option value="NQ">Nasdaq (NQ)</option>
+        <option value="SPX">SPX</option>
+      </select>
+      <div id="regime-badge" class="badge">LOADING...</div>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="main">
+    <!-- Chart -->
+    <div class="chart-area">
+      <div id="chart"></div>
+
+      <!-- Legend -->
+      <div class="legend">
+        <div class="legend-title">GEX LEVELS</div>
+        <div class="legend-grid" id="legend-grid"></div>
+      </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <h2>GEX Analysis</h2>
+
+      <!-- Regime Card -->
+      <div id="regime-card" class="regime-card">
+        <div class="regime-label">Gamma Regime</div>
+        <div id="regime-value" class="regime-value">-</div>
+        <div id="regime-desc" class="regime-desc"></div>
+      </div>
+
+      <!-- Key Levels -->
+      <div class="levels" id="levels"></div>
+
+      <!-- Net GEX -->
+      <div class="net-gex">
+        <div class="net-gex-label">Net GEX Exposure</div>
+        <div id="net-gex" class="net-gex-value">-</div>
+      </div>
+
+      <div id="status" class="status">Connecting...</div>
+    </div>
+  </div>
+
+  <script>
+    // API Configuration
+    const API_BASE = 'http://localhost:8080';
+
+    // GEX Level Config
+    const GEX_LEVELS = {
+      call_wall: { color: '#ef4444', label: 'CALL WALL', emoji: '🛡️', dash: false, desc: 'Major resistance - dealer short gamma' },
+      gamma_flip: { color: '#facc15', label: 'GAMMA FLIP', emoji: '⚡', dash: true, desc: 'Zero gamma pivot point' },
+      hvl: { color: '#a855f7', label: 'HVL', emoji: '📊', dash: true, desc: 'High volume level - price magnet' },
+      put_wall: { color: '#22c55e', label: 'PUT WALL', emoji: '🛡️', dash: false, desc: 'Major support - dealer long gamma' },
+      max_pain: { color: '#f97316', label: 'MAX PAIN', emoji: '🎯', dash: true, desc: 'Options expiry target' },
+    };
+
+    const colorClass = {
+      call_wall: 'red',
+      gamma_flip: 'yellow',
+      hvl: 'purple',
+      put_wall: 'green',
+      max_pain: 'orange',
+    };
+
+    // Initialize chart
+    const chartContainer = document.getElementById('chart');
+    const chart = LightweightCharts.createChart(chartContainer, {
+      width: chartContainer.clientWidth,
+      height: chartContainer.clientHeight,
+      layout: {
+        background: { type: 'solid', color: '#0f0f23' },
+        textColor: '#d1d5db',
+      },
+      grid: {
+        vertLines: { color: '#1f2937' },
+        horzLines: { color: '#1f2937' },
+      },
+      crosshair: {
+        mode: LightweightCharts.CrosshairMode.Normal,
+        vertLine: { color: '#6b7280', width: 1, style: 2 },
+        horzLine: { color: '#6b7280', width: 1, style: 2 },
+      },
+      rightPriceScale: {
+        borderColor: '#374151',
+        scaleMargins: { top: 0.1, bottom: 0.1 },
+      },
+      timeScale: {
+        borderColor: '#374151',
+        timeVisible: true,
+        secondsVisible: false,
+      },
+    });
+
+    const candleSeries = chart.addCandlestickSeries({
+      upColor: '#22c55e',
+      downColor: '#ef4444',
+      borderUpColor: '#22c55e',
+      borderDownColor: '#ef4444',
+      wickUpColor: '#22c55e',
+      wickDownColor: '#ef4444',
+    });
+
+    // Store price lines
+    let priceLines = {};
+    let lastPrice = null;
+    let candleData = [];
+
+    // Generate mock candles
+    function generateCandles(basePrice) {
+      const now = Math.floor(Date.now() / 1000);
+      const candles = [];
+      let price = basePrice;
+
+      for (let i = 200; i >= 0; i--) {
+        const time = now - i * 300;
+        const volatility = price * 0.002;
+        const open = price + (Math.random() - 0.5) * volatility;
+        const close = open + (Math.random() - 0.5) * volatility;
+        const high = Math.max(open, close) + Math.random() * volatility * 0.5;
+        const low = Math.min(open, close) - Math.random() * volatility * 0.5;
+        candles.push({ time, open, high, low, close });
+        price = close;
+      }
+
+      return candles;
+    }
+
+    // Update GEX price lines
+    function updatePriceLines(data) {
+      // Remove old lines
+      Object.values(priceLines).forEach(line => {
+        if (line) candleSeries.removePriceLine(line);
+      });
+      priceLines = {};
+
+      // Add new lines
+      Object.entries(GEX_LEVELS).forEach(([key, config]) => {
+        let price = data[key];
+        if (key === 'gamma_flip' && !price) price = data.zero_gamma;
+
+        if (price && price > 0) {
+          priceLines[key] = candleSeries.createPriceLine({
+            price: price,
+            color: config.color,
+            lineWidth: 2,
+            lineStyle: config.dash ? 2 : 0,
+            axisLabelVisible: true,
+            title: config.label,
+          });
+        }
+      });
+    }
+
+    // Update UI
+    function updateUI(data) {
+      // Update regime badge
+      const badge = document.getElementById('regime-badge');
+      const regime = data.gamma_regime || 'UNKNOWN';
+      badge.textContent = regime + ' GAMMA';
+      badge.className = 'badge ' + (regime === 'POSITIVE' ? 'positive' : 'negative');
+
+      // Update regime card
+      const regimeCard = document.getElementById('regime-card');
+      regimeCard.className = 'regime-card ' + (regime === 'POSITIVE' ? 'positive' : 'negative');
+
+      const regimeValue = document.getElementById('regime-value');
+      regimeValue.textContent = regime;
+      regimeValue.className = 'regime-value ' + (regime === 'POSITIVE' ? 'positive' : 'negative');
+
+      const regimeDesc = document.getElementById('regime-desc');
+      regimeDesc.textContent = regime === 'POSITIVE'
+        ? 'Dealers sell rallies, buy dips. Expect range-bound action.'
+        : 'Dealers buy rallies, sell dips. Expect trending moves.';
+
+      // Update levels
+      const levelsContainer = document.getElementById('levels');
+      levelsContainer.innerHTML = Object.entries(GEX_LEVELS).map(([key, config]) => {
+        let price = data[key];
+        if (key === 'gamma_flip' && !price) price = data.zero_gamma;
+        const cls = colorClass[key];
+        return `
+          <div class="level-card ${cls}">
+            <div class="level-header">
+              <div class="level-name ${cls}">${config.emoji} ${config.label}</div>
+              <div class="level-price">${price ? '$' + price.toFixed(0) : '-'}</div>
+            </div>
+            <div class="level-desc">${config.desc}</div>
+          </div>
+        `;
+      }).join('');
+
+      // Update net GEX
+      const netGex = document.getElementById('net-gex');
+      const totalGex = data.total_gex || 0;
+      netGex.textContent = (totalGex >= 0 ? '+' : '') + totalGex.toFixed(3) + 'B';
+      netGex.className = 'net-gex-value ' + (totalGex >= 0 ? 'positive' : 'negative');
+
+      // Update legend
+      const legendGrid = document.getElementById('legend-grid');
+      legendGrid.innerHTML = Object.entries(GEX_LEVELS).map(([key, config]) => {
+        let price = data[key];
+        if (key === 'gamma_flip' && !price) price = data.zero_gamma;
+        return `
+          <div class="legend-item">
+            <div class="legend-line" style="background: ${config.color}; ${config.dash ? 'border-top: 2px dashed ' + config.color + '; background: transparent;' : ''}"></div>
+            <span class="legend-label">${config.label}:</span>
+            <span class="legend-value">${price ? '$' + price.toFixed(0) : '-'}</span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Fetch GEX data
+    async function fetchGEXData() {
+      try {
+        const response = await fetch(API_BASE);
+        const data = await response.json();
+
+        // Get current price
+        const currentPrice = data.price || data.last_price || data.current_price || data.spot_price;
+
+        if (currentPrice && currentPrice !== lastPrice) {
+          lastPrice = currentPrice;
+          candleData = generateCandles(currentPrice);
+          candleSeries.setData(candleData);
+          chart.timeScale().fitContent();
+        }
+
+        // Update real-time candle
+        if (candleData.length > 0 && currentPrice) {
+          const lastCandle = { ...candleData[candleData.length - 1] };
+          const now = Math.floor(Date.now() / 1000);
+          const volatility = currentPrice * 0.0005;
+
+          lastCandle.time = now;
+          lastCandle.close = currentPrice + (Math.random() - 0.5) * volatility;
+          lastCandle.high = Math.max(lastCandle.high, lastCandle.close);
+          lastCandle.low = Math.min(lastCandle.low, lastCandle.close);
+
+          candleSeries.update(lastCandle);
+        }
+
+        updatePriceLines(data);
+        updateUI(data);
+
+        document.getElementById('status').textContent = 'Connected • Updates every 500ms';
+        document.getElementById('status').className = 'status connected';
+
+      } catch (error) {
+        console.error('Error fetching GEX data:', error);
+        document.getElementById('status').textContent = 'Connection error - retrying...';
+        document.getElementById('status').className = 'status error';
+      }
+    }
+
+    // Handle resize
+    window.addEventListener('resize', () => {
+      chart.applyOptions({
+        width: chartContainer.clientWidth,
+        height: chartContainer.clientHeight,
+      });
+    });
+
+    // Start polling
+    fetchGEXData();
+    setInterval(fetchGEXData, 500);
+  </script>
+</body>
+</html>
