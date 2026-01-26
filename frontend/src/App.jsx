@@ -4041,16 +4041,17 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
               {/* Fixed Modal Tooltip - Portal to body */}
               {showOrderFlowTooltip && createPortal(
                 <>
-                  {/* Backdrop */}
+                  {/* Backdrop - covers entire screen */}
                   <div
                     style={{
                       position: 'fixed',
                       top: 0,
                       left: 0,
-                      right: 0,
-                      bottom: 0,
-                      background: 'rgba(0,0,0,0.7)',
-                      zIndex: 999998
+                      width: '100vw',
+                      height: '100vh',
+                      background: 'rgba(0,0,0,0.85)',
+                      zIndex: 9999998,
+                      backdropFilter: 'blur(4px)'
                     }}
                     onClick={() => setShowOrderFlowTooltip(false)}
                   />
@@ -4060,7 +4061,7 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                     top: '50%',
                     left: '50%',
                     transform: 'translate(-50%, -50%)',
-                    zIndex: 999999,
+                    zIndex: 9999999,
                     width: 520,
                     maxHeight: '80vh',
                     overflowY: 'auto',
