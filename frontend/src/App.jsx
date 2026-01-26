@@ -4045,13 +4045,10 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                   <div
                     style={{
                       position: 'fixed',
-                      top: 0,
-                      left: 0,
-                      width: '100vw',
-                      height: '100vh',
-                      background: 'rgba(0,0,0,0.85)',
-                      zIndex: 9999998,
-                      backdropFilter: 'blur(4px)'
+                      inset: 0,
+                      background: '#000',
+                      opacity: 0.92,
+                      zIndex: 9999998
                     }}
                     onClick={() => setShowOrderFlowTooltip(false)}
                   />
