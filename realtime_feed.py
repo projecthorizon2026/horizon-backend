@@ -5035,11 +5035,10 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             now = datetime.utcnow()  # Server uses UTC
 
             # High impact events in UTC (ET + 5 hours)
-            # Powell speaking Jan 29, 2026 - using wide window to catch event
+            # Powell speaking Jan 29, 2026 - FOMC day
+            # Event window: all day on Jan 28-29, 2026
             FED_EVENTS = [
-                (2026, 1, 29, 18, 0, "Fed Chair Powell Speaks", "CRITICAL"),  # 1 PM ET = 6 PM UTC
-                (2026, 1, 29, 19, 0, "Fed Chair Powell Speaks", "CRITICAL"),  # 2 PM ET = 7 PM UTC
-                (2026, 1, 28, 19, 30, "FOMC Press Conference", "CRITICAL"),   # 2:30 PM ET = 7:30 PM UTC
+                (2026, 1, 29, 12, 0, "Fed Chair Powell Speaks - FOMC", "CRITICAL"),  # noon UTC
             ]
 
             scheduler_data = {'active': False, 'event_active': False}
@@ -5047,8 +5046,8 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             for event in FED_EVENTS:
                 year, month, day, hour, minute, event_name, impact = event
                 event_time = datetime(year, month, day, hour, minute)
-                window_start = event_time - timedelta(minutes=5)
-                window_end = event_time + timedelta(hours=3)  # Extended window
+                window_start = event_time - timedelta(hours=12)  # 12 hours before
+                window_end = event_time + timedelta(hours=12)    # 12 hours after
 
                 if window_start <= now <= window_end:
                     scheduler_data = {
