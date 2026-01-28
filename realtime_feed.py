@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.5.1"
+APP_VERSION = "15.5.2"
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -264,36 +264,67 @@ def resolve_active_month_instrument_id():
     config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
     active_month = config.get('active_month', config['front_month'])  # e.g., GCJ26
     symbol = config['symbol']  # e.g., GC.FUT
+    price_min = config['price_min']
+    price_max = config['price_max']
 
     try:
         print(f"🔍 Resolving instrument ID for {active_month}...")
         client = db.Historical(key=API_KEY)
 
-        # Fetch recent trades to get instrument_id mapping
+        # Fetch recent trades and use metadata to get symbol mapping
         from datetime import datetime, timedelta
         now = datetime.utcnow()
-        start = (now - timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        start = (now - timedelta(hours=2)).strftime('%Y-%m-%dT%H:%M:%SZ')
         end = now.strftime('%Y-%m-%dT%H:%M:%SZ')
 
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
             stype_in='parent',
-            schema='definition',
+            schema='trades',
             start=start,
             end=end
         )
 
-        # Look for the instrument definition matching our active_month
-        for record in data:
-            raw_sym = getattr(record, 'raw_symbol', '')
-            if raw_sym.startswith(active_month):
-                active_month_instrument_id = record.instrument_id
-                front_month_instrument_id = record.instrument_id  # Use for all filtering
-                print(f"✅ Resolved {active_month} to instrument ID: {active_month_instrument_id}")
-                return active_month_instrument_id
+        # Get unique instrument_ids and their prices
+        instrument_prices = {}
+        for r in data:
+            iid = r.instrument_id
+            price = r.price / 1e9 if r.price > 1e6 else r.price
+            if price < price_min or price > price_max:
+                continue
+            if iid not in instrument_prices:
+                instrument_prices[iid] = {'prices': [], 'count': 0}
+            instrument_prices[iid]['prices'].append(price)
+            instrument_prices[iid]['count'] += 1
 
-        print(f"⚠️  Could not find {active_month} in definitions, will auto-detect from trades")
+        # GCJ26 (Apr) should have HIGHER prices than GCG26 (Feb) due to contango
+        # Find the instrument with the highest average price - that's likely the further-dated contract
+        if instrument_prices:
+            for iid, info in instrument_prices.items():
+                avg_price = sum(info['prices']) / len(info['prices']) if info['prices'] else 0
+                info['avg_price'] = avg_price
+                print(f"   Instrument {iid}: {info['count']} trades, avg price ${avg_price:.2f}")
+
+            # Sort by average price descending - highest price is the further contract (GCJ26)
+            sorted_instruments = sorted(instrument_prices.items(), key=lambda x: x[1]['avg_price'], reverse=True)
+
+            if len(sorted_instruments) >= 2:
+                # Use the instrument with the HIGHER price (GCJ26 is further out, higher price in contango)
+                gcj26_instrument = sorted_instruments[0]  # Highest price = GCJ26 (Apr)
+                active_month_instrument_id = gcj26_instrument[0]
+                front_month_instrument_id = gcj26_instrument[0]
+                print(f"✅ Selected {active_month} (highest price): instrument ID {active_month_instrument_id}, avg ${gcj26_instrument[1]['avg_price']:.2f}")
+                return active_month_instrument_id
+            elif sorted_instruments:
+                # Only one instrument found, use it
+                iid = sorted_instruments[0][0]
+                active_month_instrument_id = iid
+                front_month_instrument_id = iid
+                print(f"✅ Only one instrument found: {iid}")
+                return iid
+
+        print(f"⚠️  Could not resolve {active_month} instrument ID, will auto-detect from trades")
         return None
 
     except Exception as e:
