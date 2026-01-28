@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.3.0"
+APP_VERSION = "15.4.1"
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -67,13 +67,13 @@ PORT = int(os.environ.get('PORT', 8080))
 CONTRACT_CONFIG = {
     'GC': {
         'symbol': 'GC.FUT',
-        'front_month': 'GCH26',
-        'front_month_name': 'Gold Mar 2026',
+        'front_month': 'GCG26',
+        'front_month_name': 'Gold Feb 2026',
         'next_month': 'GCJ26',
         'next_month_name': 'Gold Apr 2026',
-        'active_month': 'GCH26',  # What we're actually trading
-        'active_month_name': 'Gold Mar 2026',
-        'name': 'Gold Mar 2026',
+        'active_month': 'GCJ26',  # What we're actually trading
+        'active_month_name': 'Gold Apr 2026',
+        'name': 'Gold Apr 2026',
         'ticker': 'GC1!',
         'price_min': 2000,
         'price_max': 10000,
@@ -3797,8 +3797,8 @@ def reset_state_for_contract(contract_key):
     with lock:
         # Update contract info
         state['ticker'] = config['ticker']
-        state['contract'] = config['front_month']
-        state['contract_name'] = config['name']
+        state['contract'] = config.get('active_month', config['front_month'])
+        state['contract_name'] = config.get('active_month_name', config['name'])
         state['asset_class'] = contract_key
 
         # Reset prices
