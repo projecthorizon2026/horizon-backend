@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.6.1"
+APP_VERSION = "15.7.0"
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -66,7 +66,7 @@ PORT = int(os.environ.get('PORT', 8080))
 # Contract configurations
 CONTRACT_CONFIG = {
     'GC': {
-        'symbol': 'GC.c.1',  # Second continuous contract = GCJ26 when GCG26 is front
+        'symbol': 'GC.FUT',  # Parent symbol - filter by instrument_id for specific contract
         'front_month': 'GCG26',
         'front_month_name': 'Gold Feb 2026',
         'next_month': 'GCJ26',
@@ -256,8 +256,8 @@ active_month_instrument_id = None  # Will be resolved for GCJ26 specifically
 def resolve_active_month_instrument_id():
     """Resolve the instrument_id for the active_month contract (e.g., GCJ26)
 
-    FORCE select the instrument with HIGHER prices as GCJ26.
-    GCJ26 (Apr) trades ~$30-50 higher than GCG26 (Feb) due to contango.
+    Uses definitions schema to directly match raw_symbol to the target contract.
+    This is 100% reliable vs price-based detection.
     """
     global active_month_instrument_id, front_month_instrument_id
 
@@ -270,7 +270,7 @@ def resolve_active_month_instrument_id():
     symbol = config['symbol']  # e.g., GC.FUT
 
     try:
-        print(f"🔍 Resolving instrument ID for {active_month}...")
+        print(f"🔍 Resolving instrument ID for {active_month} using definitions...")
         client = db.Historical(key=API_KEY)
 
         from datetime import datetime, timedelta
@@ -278,16 +278,53 @@ def resolve_active_month_instrument_id():
         start = (now - timedelta(hours=2)).strftime('%Y-%m-%dT%H:%M:%SZ')
         end = now.strftime('%Y-%m-%dT%H:%M:%SZ')
 
+        # Step 1: Fetch definitions to get instrument_id -> raw_symbol mapping
+        print(f"   Fetching definitions for {symbol}...")
+        definitions = client.timeseries.get_range(
+            dataset='GLBX.MDP3',
+            symbols=[symbol],
+            stype_in='parent',
+            schema='definition',
+            start=start,
+            end=end
+        )
+
+        # Build mapping of instrument_id -> raw_symbol
+        instrument_symbols = {}
+        for defn in definitions:
+            iid = defn.instrument_id
+            raw_sym = getattr(defn, 'raw_symbol', None)
+            if raw_sym:
+                instrument_symbols[iid] = raw_sym
+                print(f"   Definition: ID {iid} = {raw_sym}")
+
+        # Step 2: Find the instrument_id that matches our target active_month
+        target_iid = None
+        for iid, raw_sym in instrument_symbols.items():
+            if raw_sym == active_month:  # Direct match: "GCJ26" == "GCJ26"
+                target_iid = iid
+                print(f"   ✅ MATCH: {raw_sym} = ID {iid}")
+                break
+
+        if target_iid:
+            active_month_instrument_id = target_iid
+            front_month_instrument_id = target_iid
+            print(f"✅ Selected {active_month}: ID {active_month_instrument_id} (exact symbol match)")
+            return active_month_instrument_id
+
+        # Fallback: If no definitions, try to use price-based detection
+        print(f"   ⚠️ No definition match for {active_month}, falling back to price detection...")
+
+        # Fetch trades and use highest price (contango)
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='continuous',
+            stype_in='parent',
             schema='trades',
             start=start,
             end=end
         )
 
-        # Group by instrument_id and track MEDIAN price (more robust than avg)
         instrument_stats = {}
         for r in data:
             iid = r.instrument_id
@@ -303,34 +340,26 @@ def resolve_active_month_instrument_id():
             print("⚠️  No trades found")
             return None
 
-        # Calculate MEDIAN price for each instrument (more robust)
+        # Use MAX price to detect GCJ26 (trades higher due to contango)
         for iid, info in instrument_stats.items():
-            sorted_prices = sorted(info['prices'])
-            mid = len(sorted_prices) // 2
-            info['median'] = sorted_prices[mid] if sorted_prices else 0
             info['max'] = max(info['prices'])
             info['min'] = min(info['prices'])
-            print(f"   ID {iid}: {info['count']} trades, median ${info['median']:.2f}, range ${info['min']:.2f}-${info['max']:.2f}")
+            sym_name = instrument_symbols.get(iid, f"ID_{iid}")
+            print(f"   {sym_name} (ID {iid}): {info['count']} trades, range ${info['min']:.2f}-${info['max']:.2f}")
 
-        # Sort by MEDIAN price descending - GCJ26 has higher median
-        sorted_inst = sorted(instrument_stats.items(), key=lambda x: x[1]['median'], reverse=True)
-
-        # ALWAYS select the instrument with HIGHEST MEDIAN PRICE
-        # This should be GCJ26 as it trades at a premium due to contango
+        # Sort by MAX price - GCJ26 has higher max
+        sorted_inst = sorted(instrument_stats.items(), key=lambda x: x[1]['max'], reverse=True)
         top = sorted_inst[0]
         active_month_instrument_id = top[0]
         front_month_instrument_id = top[0]
 
-        # Log the spread if we have 2+ instruments
-        if len(sorted_inst) >= 2:
-            spread = top[1]['median'] - sorted_inst[1][1]['median']
-            print(f"   Spread: ${spread:.2f}")
-
-        print(f"✅ Selected {active_month}: ID {active_month_instrument_id} (median ${top[1]['median']:.2f})")
+        print(f"✅ Selected ID {active_month_instrument_id} (highest max price ${top[1]['max']:.2f})")
         return active_month_instrument_id
 
     except Exception as e:
         print(f"⚠️  Error: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -1124,7 +1153,7 @@ def fetch_rollover_data():
             front_data = client.timeseries.get_range(
                 dataset='GLBX.MDP3',
                 schema='ohlcv-1d',
-                stype_in='continuous',
+                stype_in='parent',
                 symbols=[front_month],
                 start=start_date,
                 end=end_date
@@ -1153,7 +1182,7 @@ def fetch_rollover_data():
             next_data = client.timeseries.get_range(
                 dataset='GLBX.MDP3',
                 schema='ohlcv-1d',
-                stype_in='continuous',
+                stype_in='parent',
                 symbols=[next_month],
                 start=start_date,
                 end=end_date
@@ -1287,7 +1316,7 @@ def fetch_pd_levels():
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='continuous',  # Use raw_symbol for specific contracts like GCJ26
+            stype_in='parent',  # Use raw_symbol for specific contracts like GCJ26
             schema='trades',
             start=start_ts,
             end=end_ts
@@ -1536,7 +1565,7 @@ def fetch_all_ibs():
                 data = client.timeseries.get_range(
                     dataset='GLBX.MDP3',
                     symbols=[symbol],
-                    stype_in='continuous',
+                    stype_in='parent',
                     schema='trades',
                     start=utc_start,
                     end=utc_end
@@ -1604,7 +1633,7 @@ def fetch_all_ibs():
                             a_data = client.timeseries.get_range(
                                 dataset='GLBX.MDP3',
                                 symbols=[symbol],
-                                stype_in='continuous',
+                                stype_in='parent',
                                 schema='trades',
                                 start=f"{today}T14:30:00Z",
                                 end=f"{today}T15:00:00Z"
@@ -1633,7 +1662,7 @@ def fetch_all_ibs():
                             b_data = client.timeseries.get_range(
                                 dataset='GLBX.MDP3',
                                 symbols=[symbol],
-                                stype_in='continuous',
+                                stype_in='parent',
                                 schema='trades',
                                 start=f"{today}T15:00:00Z",
                                 end=f"{today}T15:30:00Z"
@@ -1728,7 +1757,7 @@ def fetch_full_day_data():
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='continuous',
+            stype_in='parent',
             schema='trades',
             start=utc_start,
             end=utc_end
@@ -1914,7 +1943,7 @@ def fetch_todays_tpo_data():
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='continuous',
+            stype_in='parent',
             schema='trades',
             start=day_start_utc.strftime('%Y-%m-%dT%H:%M:%SZ'),
             end=now_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -2157,7 +2186,7 @@ def fetch_ended_sessions_ohlc():
                 data = client.timeseries.get_range(
                     dataset='GLBX.MDP3',
                     symbols=[symbol],
-                    stype_in='continuous',
+                    stype_in='parent',
                     schema='trades',
                     start=utc_start,
                     end=utc_end
@@ -2401,7 +2430,7 @@ def fetch_week_sessions_ohlc(week_id):
                 data = client.timeseries.get_range(
                     dataset='GLBX.MDP3',
                     symbols=[symbol],
-                    stype_in='continuous',
+                    stype_in='parent',
                     schema='trades',
                     start=start_utc,
                     end=end_utc
@@ -2633,7 +2662,7 @@ def fetch_historic_tpo_profiles(days=40):
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='continuous',  # Use parent for more historical data
+            stype_in='parent',  # Use parent for more historical data
             schema='ohlcv-1h',  # 1-hour bars
             start=start_utc,
             end=end_utc
@@ -3214,7 +3243,7 @@ def fetch_session_history(days=50, force_refresh=False):
             data = client.timeseries.get_range(
                 dataset='GLBX.MDP3',
                 symbols=[symbol],
-                stype_in='continuous',
+                stype_in='parent',
                 schema='trades',
                 start=utc_start,
                 end=utc_end
@@ -3234,7 +3263,7 @@ def fetch_session_history(days=50, force_refresh=False):
                 data = client.timeseries.get_range(
                     dataset='GLBX.MDP3',
                     symbols=[symbol],
-                    stype_in='continuous',
+                    stype_in='parent',
                     schema='trades',
                     start=utc_start,
                     end=utc_end
@@ -3436,7 +3465,7 @@ def fetch_historical_sessions_ohlc(days=6):
                 data = client.timeseries.get_range(
                     dataset='GLBX.MDP3',
                     symbols=[symbol],
-                    stype_in='continuous',
+                    stype_in='parent',
                     schema='trades',
                     start=start_utc,
                     end=end_utc
@@ -3610,7 +3639,7 @@ def fetch_current_session_history():
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='continuous',
+            stype_in='parent',
             schema='trades',
             start=utc_start,
             end=utc_end
@@ -3766,7 +3795,7 @@ def fetch_historical_candle_volumes():
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='continuous',
+            stype_in='parent',
             schema='trades',
             start=utc_start_str,
             end=utc_end_str
@@ -4078,7 +4107,7 @@ def start_stream():
             live_client.subscribe(
                 dataset='GLBX.MDP3',
                 schema='trades',
-                stype_in='continuous',  # Use raw_symbol for specific contracts like GCJ26
+                stype_in='parent',  # Use raw_symbol for specific contracts like GCJ26
                 symbols=[symbol]
             )
 
