@@ -3,7 +3,7 @@
 PROJECT HORIZON - HTTP LIVE FEED v15.1.0
 All live data from Databento - no placeholders
 """
-APP_VERSION = "15.1.0"
+APP_VERSION = "15.2.0"
 
 # Suppress deprecation warnings (utcfromtimestamp) to avoid log flooding
 import warnings
@@ -65,11 +65,11 @@ PORT = int(os.environ.get('PORT', 8080))
 CONTRACT_CONFIG = {
     'GC': {
         'symbol': 'GC.FUT',
-        'front_month': 'GCG26',
-        'front_month_name': 'Gold Feb 2026',
-        'next_month': 'GCJ26',
-        'next_month_name': 'Gold Apr 2026',
-        'name': 'Gold Feb 2026',
+        'front_month': 'GCJ26',
+        'front_month_name': 'Gold Apr 2026',
+        'next_month': 'GCM26',
+        'next_month_name': 'Gold Jun 2026',
+        'name': 'Gold Apr 2026',
         'ticker': 'GC1!',
         'price_min': 2000,
         'price_max': 10000,
@@ -104,8 +104,8 @@ lock = threading.Lock()
 
 state = {
     'ticker': 'GC1!',
-    'contract': 'GCG26',  # Actual front-month contract symbol
-    'contract_name': 'Gold Feb 2026',  # Human readable name
+    'contract': 'GCJ26',  # Actual front-month contract symbol
+    'contract_name': 'Gold Apr 2026',  # Human readable name
     'asset_class': 'GC',  # GC = Gold, NQ = Nasdaq
     'current_price': 0.0,
     'bid': 0.0,
