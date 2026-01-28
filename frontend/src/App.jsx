@@ -16,7 +16,7 @@ import MarketPulse from './MarketPulse';
 // API Configuration - uses environment variables in production
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const REDFOLDER_BASE = import.meta.env.VITE_REDFOLDER_URL || 'http://localhost:8081';
-const BUILD_VERSION = '18.5.2';
+const BUILD_VERSION = '18.6.0';
 console.log('Horizon v' + BUILD_VERSION); // Force cache bust - reload required
 
 // Auth Context
@@ -77,7 +77,7 @@ const DEFAULT_SETTINGS = {
   },
   // Backtest Filters
   filters: {
-    grades: { A: true, B: true, C: true },
+    grades: { A: true, B: true, C: true, F: true },  // Include F for losing trades
     tiers: { 1: true, 2: true, 3: true },
     minR: -10,  // Show all by default
   },
@@ -158,7 +158,21 @@ const generateMockTrades = (settings) => {
 
 // Hook to load real backtest data from static JSON file
 const useBacktestData = () => {
-  const [data, setData] = useState({ trades: null, stats: null, source: 'loading' });
+  const [data, setData] = useState({
+    trades: null,
+    stats: null,
+    source: 'loading',
+    metadata: null,
+    sessions: null,
+    volumeProfiles: null,
+    bigVolumeDays: null,
+    supportResistance: null,
+    seasonality: null,
+    dailyCandles: null,
+    hourlyCandles: null,
+    featureStatistics: null,
+    distributions: null
+  });
 
   useEffect(() => {
     const loadData = async () => {
@@ -168,24 +182,34 @@ const useBacktestData = () => {
         if (response.ok) {
           const json = await response.json();
           if (json.trades && json.trades.length > 0) {
-            console.log(`✓ Loaded ${json.trades.length} trades from ${json.dataSource || 'backtest_data.json'}`);
+            console.log(`✓ Loaded ${json.trades.length} trades from ${json.metadata?.data_range?.start || 'backtest_data.json'} to ${json.metadata?.data_range?.end}`);
             setData({
               trades: json.trades,
-              stats: json.stats,
-              source: json.dataSource || 'real'
+              stats: json.statistics || json.stats,
+              source: 'historical_5y',
+              metadata: json.metadata,
+              sessions: json.sessions,
+              volumeProfiles: json.volume_profiles,
+              bigVolumeDays: json.big_volume_days,
+              supportResistance: json.support_resistance,
+              seasonality: json.seasonality,
+              dailyCandles: json.daily_candles,
+              hourlyCandles: json.hourly_candles,
+              featureStatistics: json.feature_statistics,
+              distributions: json.distributions
             });
             return;
           }
         }
       } catch (e) {
-        console.log('No backtest_data.json found');
+        console.log('No backtest_data.json found:', e);
       }
-      
+
       // Fallback to mock data
       console.log('Using generated mock data (run generate_backtest.py for real data)');
       setData({ trades: null, stats: null, source: 'mock' });
     };
-    
+
     loadData();
   }, []);
 
@@ -1350,7 +1374,7 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
   const [showGammaLevels, setShowGammaLevels] = useState(false);
   const [showPhaseChart, setShowPhaseChart] = useState(false); // Phase Chart collapsed by default
   const [showOHLCCharts, setShowOHLCCharts] = useState(true); // Price/Delta OHLC charts visible by default
-  const [hoveredBigTrade, setHoveredBigTrade] = useState(null); // For big trade bubble tooltip
+  const [hoveredBigTrade, setHoveredBigTrade] = useState(null); // For big trade bubble tooltip (stores trade.ts for stability)
   const [showPhaseTooltip, setShowPhaseTooltip] = useState(false); // For detailed phase tooltip
   const [showOrderFlowTooltip, setShowOrderFlowTooltip] = useState(false); // For Order Flow Analysis modal
   const [hoveredChartCandle, setHoveredChartCandle] = useState(null); // For crosshair
@@ -1624,38 +1648,67 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
   const gammaLevelNames = ['R1', 'R2', 'R3', 'S1', 'S2', 'S3', 'Zero Gamma', 'HVL'];
 
   // Reference levels - all from live Databento feed, no hardcoded fallbacks
-  // For BTC-SPOT, include named session IBs from metrics.ibs
-  const isBtcSpot = metrics?.contract === 'BTC-SPOT';
-  const sessionIBLevels = isBtcSpot ? [
-    metrics?.ibs?.japan?.high > 0 && { price: metrics.ibs.japan.high, name: 'Japan IB H', color: '#9370DB' },
-    metrics?.ibs?.japan?.low > 0 && metrics?.ibs?.japan?.low < 999999 && { price: metrics.ibs.japan.low, name: 'Japan IB L', color: '#9370DB' },
-    metrics?.ibs?.london?.high > 0 && { price: metrics.ibs.london.high, name: 'London IB H', color: '#3B82F6' },
-    metrics?.ibs?.london?.low > 0 && metrics?.ibs?.london?.low < 999999 && { price: metrics.ibs.london.low, name: 'London IB L', color: '#3B82F6' },
-    metrics?.ibs?.us?.high > 0 && { price: metrics.ibs.us.high, name: 'US IB H', color: '#F59E0B' },
-    metrics?.ibs?.us?.low > 0 && metrics?.ibs?.us?.low < 999999 && { price: metrics.ibs.us.low, name: 'US IB L', color: '#F59E0B' },
-    metrics?.ibs?.ny?.high > 0 && { price: metrics.ibs.ny.high, name: 'NY IB H', color: '#10B981' },
-    metrics?.ibs?.ny?.low > 0 && metrics?.ibs?.ny?.low < 999999 && { price: metrics.ibs.ny.low, name: 'NY IB L', color: '#10B981' },
+  // Get current session name for VWAP label
+  const currentSessionName = metrics?.current_session_name || metrics?.sessionId || 'Session';
+
+  // All 4 IB levels with names - always show, cached until 17:00 ET
+  const allIBLevels = [
+    // Japan IB (19:00-20:00 ET)
+    metrics?.ibs?.japan?.high > 0 && { price: metrics.ibs.japan.high, name: 'Japan IB High', color: '#9370DB' },
+    metrics?.ibs?.japan?.low > 0 && metrics?.ibs?.japan?.low < 999999 && { price: metrics.ibs.japan.low, name: 'Japan IB Low', color: '#9370DB' },
+    // London IB (03:00-04:00 ET)
+    metrics?.ibs?.london?.high > 0 && { price: metrics.ibs.london.high, name: 'London IB High', color: '#a855f7' },
+    metrics?.ibs?.london?.low > 0 && metrics?.ibs?.london?.low < 999999 && { price: metrics.ibs.london.low, name: 'London IB Low', color: '#a855f7' },
+    // US IB (08:20-09:30 ET)
+    metrics?.ibs?.us?.high > 0 && { price: metrics.ibs.us.high, name: 'US IB High', color: '#F59E0B' },
+    metrics?.ibs?.us?.low > 0 && metrics?.ibs?.us?.low < 999999 && { price: metrics.ibs.us.low, name: 'US IB Low', color: '#F59E0B' },
+    metrics?.ibs?.us?.mid > 0 && { price: metrics.ibs.us.mid, name: 'US IB Mid', color: '#F59E0B' },
+    // NY IB (09:30-10:30 ET)
+    metrics?.ibs?.ny?.high > 0 && { price: metrics.ibs.ny.high, name: 'NY IB High', color: '#10B981' },
+    metrics?.ibs?.ny?.low > 0 && metrics?.ibs?.ny?.low < 999999 && { price: metrics.ibs.ny.low, name: 'NY IB Low', color: '#10B981' },
+    metrics?.ibs?.ny?.mid > 0 && { price: metrics.ibs.ny.mid, name: 'NY IB Mid', color: '#10B981' },
+  ];
+
+  // Session POC from TPO data
+  const sessionPOC = metrics?.tpo_poc > 0 ? { price: metrics.tpo_poc, name: `${currentSessionName} POC`, color: '#ffaa00' } : null;
+
+  // Fibonacci levels calculated from day session range
+  const fibDayHigh = metrics?.dayHigh || metrics?.day_high || 0;
+  const fibDayLow = metrics?.dayLow || metrics?.day_low || 0;
+  const fibDayRange = fibDayHigh - fibDayLow;
+  const fibLevels = fibDayRange > 0 ? [
+    { price: fibDayLow + (fibDayRange * 0.786), name: 'Fib 78.6%', color: '#ff6b6b' },
+    { price: fibDayLow + (fibDayRange * 0.618), name: 'Fib 61.8%', color: '#ffd93d' },
+    { price: fibDayLow + (fibDayRange * 0.5), name: 'Fib 50%', color: '#f97316' },
+    { price: fibDayLow + (fibDayRange * 0.382), name: 'Fib 38.2%', color: '#00bcd4' },
+    { price: fibDayLow + (fibDayRange * 0.236), name: 'Fib 23.6%', color: '#00ff88' },
   ] : [];
 
   const referenceLevels = [
     gexData.pd_high > 0 && { price: gexData.pd_high, name: 'PD High', color: '#ff4466' },
     showGammaLevels && gexData.hvl > 0 && { price: gexData.hvl, name: 'HVL', color: '#00aaff' },
-    // For BTC-SPOT, use named session IBs instead of generic IB
-    !isBtcSpot && metrics.ib_high > 0 && { price: metrics.ib_high, name: 'IB High', color: '#ffaa00' },
     showGammaLevels && { price: currentPrice + 50, name: 'R3', color: '#ff6b6b' },
     showGammaLevels && { price: currentPrice + 30, name: 'R2', color: '#ff8c8c' },
     showGammaLevels && { price: currentPrice + 15, name: 'R1', color: '#ffaaaa' },
     showGammaLevels && gexData.zero_gamma > 0 && { price: gexData.zero_gamma, name: 'Zero Gamma', color: '#00ff88' },
-    metrics.vwap > 0 && { price: metrics.vwap, name: 'VWAP', color: '#00ddff' },
-    // IB Mid removed per user request
-    !isBtcSpot && metrics.ib_low > 0 && { price: metrics.ib_low, name: 'IB Low', color: '#00ff88' },
+    // Current Session VWAP with session name
+    metrics.vwap > 0 && { price: metrics.vwap, name: `${currentSessionName} VWAP`, color: '#00ddff' },
+    // Day VWAP (full day from 18:00 ET)
+    metrics.day_vwap > 0 && { price: metrics.day_vwap, name: 'Day VWAP', color: '#E879F9' },
+    // Anchored VWAPs (persist until 17:00 ET)
+    metrics.us_ib_vwap > 0 && { price: metrics.us_ib_vwap, name: 'US IB VWAP', color: '#F59E0B' },
+    metrics.ny_1h_vwap > 0 && { price: metrics.ny_1h_vwap, name: 'NY 1H VWAP', color: '#10B981' },
+    // Current Session POC with session name
+    sessionPOC,
     showGammaLevels && { price: currentPrice - 15, name: 'S1', color: '#88ff88' },
     showGammaLevels && { price: currentPrice - 30, name: 'S2', color: '#66dd66' },
     showGammaLevels && { price: currentPrice - 50, name: 'S3', color: '#44bb44' },
     gexData.pdpoc > 0 && { price: gexData.pdpoc, name: 'pdPOC', color: '#ffaa00' },
     gexData.pd_low > 0 && { price: gexData.pd_low, name: 'PD Low', color: '#00ff88' },
-    // Add session IB levels for BTC-SPOT
-    ...sessionIBLevels,
+    // Add Fibonacci levels
+    ...fibLevels,
+    // Add all 4 IB levels with names (cached until 17:00 ET)
+    ...allIBLevels,
   ].filter(Boolean).sort((a, b) => b.price - a.price);
 
   // Separate levels above and below current price
@@ -1807,7 +1860,7 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
       <div style={{
         display: isMobile ? 'flex' : 'grid',
         flexDirection: isMobile ? 'column' : undefined,
-        gridTemplateColumns: isMobile ? undefined : (isTablet ? '1fr' : '450px 1fr'),
+        gridTemplateColumns: isMobile ? undefined : (isTablet ? '1fr' : '550px 1fr'),
         gap: isMobile ? 12 : 20,
         maxWidth: 1400,
         margin: '0 auto'
@@ -1858,8 +1911,6 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
           }}>
             {/* Levels Above */}
             <div style={{
-              maxHeight: 200,
-              overflowY: 'auto',
               borderBottom: '1px solid rgba(255,255,255,0.1)'
             }}>
               {levelsAbove.map((level, idx) => (
@@ -1897,8 +1948,6 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
 
             {/* Levels Below */}
             <div style={{
-              maxHeight: 200,
-              overflowY: 'auto',
               borderTop: '1px solid rgba(255,255,255,0.1)'
             }}>
               {levelsBelow.map((level, idx) => (
@@ -3881,7 +3930,12 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
 
                     {/* Big Trades Bubble Overlay */}
                     {(() => {
-                      const bigTrades = metrics.big_trades || [];
+                      // Merge live trades with historical trades (deduplicate by timestamp)
+                      const liveTrades = metrics.big_trades || [];
+                      const historicalTrades = metrics.big_trades_historical || [];
+                      const seenTs = new Set(liveTrades.map(t => t.ts));
+                      const mergedTrades = [...liveTrades, ...historicalTrades.filter(t => !seenTs.has(t.ts))];
+                      const bigTrades = mergedTrades.sort((a, b) => b.ts - a.ts); // Newest first
                       if (bigTrades.length === 0) return null;
 
                       const candleWidth = 100 / allCandles.length; // Percentage width per candle
@@ -3911,7 +3965,7 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                             width: '100%',
                             height: chartHeight,
                             pointerEvents: 'none',
-                            zIndex: 20,
+                            zIndex: 25,
                             overflow: 'visible'
                           }}
                         >
@@ -3974,8 +4028,11 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                             const y = priceToY(trade.price);
 
                             // Radius: proportional to trade size (sqrt for visual balance)
-                            const isHovered = hoveredBigTrade === i;
                             const baseRadius = Math.min(22, Math.max(8, Math.sqrt(trade.size) * 2));
+
+                            // Use trade.ts as stable identifier (won't change on re-render)
+                            const tradeId = trade.ts;
+                            const isHovered = hoveredBigTrade === tradeId;
                             const radius = isHovered ? baseRadius * 1.5 : baseRadius;
 
                             // Gradient and color based on side
@@ -3988,11 +4045,19 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
 
                             return (
                               <g
-                                key={i}
-                                style={{ cursor: 'pointer', pointerEvents: 'auto' }}
-                                onMouseEnter={() => setHoveredBigTrade(i)}
+                                key={tradeId}
+                                style={{ cursor: 'pointer' }}
+                                onMouseEnter={() => setHoveredBigTrade(tradeId)}
                                 onMouseLeave={() => setHoveredBigTrade(null)}
                               >
+                                {/* Invisible hitbox for better click detection */}
+                                <circle
+                                  cx={`${xPercent}%`}
+                                  cy={y}
+                                  r={radius + 15}
+                                  fill="transparent"
+                                  style={{ pointerEvents: 'all', cursor: 'pointer' }}
+                                />
                                 {/* Outer glow ring */}
                                 <circle
                                   cx={`${xPercent}%`}
@@ -4002,7 +4067,7 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                                   stroke={glowColor}
                                   strokeWidth={isHovered ? 3 : 1}
                                   strokeOpacity={isHovered ? 0.5 : 0.2}
-                                  style={{ transition: 'all 0.2s ease' }}
+                                  style={{ transition: 'all 0.2s ease', pointerEvents: 'none' }}
                                 />
                                 {/* Soft glow background */}
                                 <circle
@@ -4056,14 +4121,16 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                           {/* Show count if trades exist but none in visible range */}
                           {visibleTrades.length === 0 && bigTrades.length > 0 && (
                             <text x="50%" y="20" textAnchor="middle" fontSize={9} fill="#666">
-                              {bigTrades.length} big trades (earlier periods)
+                              {bigTrades.length} big trades ({historicalTrades.length} historical) - scroll to see
                             </text>
                           )}
                         </svg>
 
                         {/* Hover Tooltip - positioned outside SVG */}
-                        {hoveredBigTrade !== null && visibleTrades[hoveredBigTrade] && (() => {
-                          const trade = visibleTrades[hoveredBigTrade];
+                        {hoveredBigTrade !== null && (() => {
+                          // Find trade by timestamp (stable identifier)
+                          const trade = visibleTrades.find(t => t.ts === hoveredBigTrade);
+                          if (!trade) return null;
                           const notional = trade.size * trade.price * multiplier;
                           const vsAvg = avgTradeSize > 0 ? (trade.size / avgTradeSize).toFixed(1) : '—';
                           const tradeTime = new Date(trade.ts * 1000).toLocaleString('en-US', {
@@ -4100,9 +4167,15 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                                 <span style={{ color: parseFloat(vsAvg) > 2 ? '#00ff88' : '#fff' }}>{vsAvg}x larger</span>
                                 <span style={{ color: '#666' }}>Time:</span>
                                 <span style={{ color: '#888' }}>{tradeTime} ET</span>
+                                {trade.date && (
+                                  <>
+                                    <span style={{ color: '#666' }}>Date:</span>
+                                    <span style={{ color: '#888' }}>{trade.date}</span>
+                                  </>
+                                )}
                               </div>
                               <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: 9, color: '#666' }}>
-                                Top 10% of trades by size
+                                Top 10% of trades by size {trade.date ? '(historical)' : '(live)'}
                               </div>
                             </div>
                           );
@@ -4124,7 +4197,7 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                     </div>
                     <span style={{ color: '#666' }}>|</span>
                     <div style={{ color: '#f97316' }}>
-                      {(metrics.big_trades || []).length} trades ≥{metrics.big_trade_threshold || 10} (P90)
+                      {(metrics.big_trades || []).length} live + {(metrics.big_trades_historical || []).length} historical ≥{metrics.big_trade_threshold || 10} (P90)
                     </div>
                   </div>
                 </div>
@@ -4222,10 +4295,8 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
               </div>
             );
           })()}
-        </div>
-      </div>
 
-      {/* ORDER FLOW ANALYSIS - Fabio's Trading Model */}
+          {/* ORDER FLOW ANALYSIS */}
       {(() => {
         const history = metrics.volume_5m?.history || [];
         const needsMoreData = history.length < 5;
@@ -4273,8 +4344,7 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
 
         return (
           <div style={{
-            maxWidth: 1400,
-            margin: '12px auto 0',
+            marginTop: 8,
             background: needsMoreData ? 'rgba(255,255,255,0.02)' : regime === 'DISTRIBUTION' ? 'rgba(255,68,102,0.08)' : regime === 'ACCUMULATION' ? 'rgba(0,255,136,0.08)' : 'rgba(255,255,255,0.02)',
             border: `1px solid ${needsMoreData ? 'rgba(255,255,255,0.08)' : regime === 'DISTRIBUTION' ? 'rgba(255,68,102,0.3)' : regime === 'ACCUMULATION' ? 'rgba(0,255,136,0.3)' : 'rgba(255,255,255,0.08)'}`,
             borderRadius: 8,
@@ -4517,7 +4587,7 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                     color: '#666',
                     textAlign: 'center'
                   }}>
-                    Based on Fabio's World Trading Championship model • {history.length} candles analyzed
+                    Order Flow Analysis • {history.length} candles analyzed
                   </div>
                 </div>
               )}
@@ -4646,8 +4716,7 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
       {/* Gold Institutional Data - Show for Gold contracts */}
       {metrics?.contract !== 'BTC-SPOT' && (
         <div style={{
-          maxWidth: 1400,
-          margin: '12px auto 0',
+          marginTop: 8,
           background: 'rgba(255,255,255,0.02)',
           border: '1px solid rgba(255,255,255,0.08)',
           borderRadius: 8,
@@ -4938,6 +5007,8 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
           </div>
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 };
@@ -5142,6 +5213,7 @@ const VSIAnalysis = ({ selectedContract = 'ES' }) => {
             sessionOpen: data.session_open || 0,
             currentPrice: data.current_price || 0,
             sessionId: data.current_session_id,
+            current_session_name: data.current_session_name || '',
             vwap: data.vwap || 0,
             // Day OHLC
             dayOpen: data.day_open || 0,
@@ -5154,7 +5226,25 @@ const VSIAnalysis = ({ selectedContract = 'ES' }) => {
             // Delta for current session
             cumulativeDelta: data.cumulative_delta || 0,
             // Ended sessions OHLC
-            endedSessions: data.ended_sessions || {}
+            endedSessions: data.ended_sessions || {},
+            // IB Sessions from Databento
+            ibs: data.ibs || {},
+            currentIB: data.current_ib || null,
+            // Legacy IB (for backwards compatibility)
+            ibHigh: data.ib_high || 0,
+            ibLow: data.ib_low || 0,
+            // Overnight/Globex
+            overnightHigh: data.overnight_high || data.globex_high || 0,
+            overnightLow: data.overnight_low || data.globex_low || 0,
+            // TPO/Market Profile Data
+            tpo_poc: data.tpo_poc || 0,
+            tpo_vah: data.tpo_vah || 0,
+            tpo_val: data.tpo_val || 0,
+            // Anchored VWAPs (persist until 17:00 ET)
+            us_ib_vwap: data.us_ib_vwap || 0,
+            ny_1h_vwap: data.ny_1h_vwap || 0,
+            // Day VWAP (full day from 18:00 ET)
+            day_vwap: data.day_vwap || 0
           });
         }
       } catch (err) {
@@ -11045,14 +11135,14 @@ const SettingsPanel = ({ settings, onSettingsChange, trades = [], dateRange, con
             <div style={{ flex: 1 }}>
               <label style={{ ...styles.sliderLabel, fontSize: 10 }}>Grade</label>
               <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                {['A', 'B', 'C'].map(grade => (
+                {['A', 'B', 'C', 'F'].map(grade => (
                   <label key={grade} style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer' }}>
                     <input
                       type="checkbox"
                       checked={localSettings.filters?.grades?.[grade] ?? true}
                       onChange={(e) => {
                         const newFilters = { ...localSettings.filters };
-                        if (!newFilters.grades) newFilters.grades = { A: true, B: true, C: true };
+                        if (!newFilters.grades) newFilters.grades = { A: true, B: true, C: true, F: true };
                         newFilters.grades[grade] = e.target.checked;
                         handleChange('filters', newFilters);
                       }}
@@ -14788,18 +14878,29 @@ const ZoneParticipation = () => {
                         const rthVwapDiff = rthVwap > 0 ? (currentPrice - rthVwap) : 0;
                         const rthVwapAbove = rthVwapDiff >= 0;
 
+                        // === OVERNIGHT DATA (18:00 → 8:20 ET) ===
+                        const overnightHigh = liveData?.overnight_high || 0;
+                        const overnightLow = liveData?.overnight_low || 0;
+                        const overnightRange = (overnightHigh > 0 && overnightLow > 0) ? (overnightHigh - overnightLow) : 0;
+
+                        // === US IB VWAP (08:20 ET Anchored) ===
+                        const usIbVwap = liveData?.us_ib_vwap || 0;
+                        const usIbVwapDiff = usIbVwap > 0 ? (currentPrice - usIbVwap) : 0;
+                        const usIbVwapAbove = usIbVwapDiff >= 0;
+
                         // === BIAS A: Overnight Range (18:00 → 8:20) ===
-                        // % from high = where CURRENT PRICE is relative to overnight high
-                        // 0% = at the high, 100% = at the low, negative = above high
-                        const aboveOvernightHigh = currentPrice > dayHigh;
+                        // Use overnight range for A section (not full day range)
+                        const aboveOvernightHigh = currentPrice > overnightHigh;
                         let pctFromHigh = 50;
-                        if (dayRange > 0) {
-                          pctFromHigh = ((dayHigh - currentPrice) / dayRange * 100);
+                        let ptsFromHigh = 0;
+                        if (overnightRange > 0) {
+                          pctFromHigh = ((overnightHigh - currentPrice) / overnightRange * 100);
+                          ptsFromHigh = overnightHigh - currentPrice;
                         }
-                        // Upside/Downside from CURRENT PRICE to day boundaries
-                        const upsidePotential = dayHigh - currentPrice; // Can be negative if above
-                        const downsideRisk = currentPrice - dayLow;
-                        const biasAValid = dayRange > 0;
+                        // Upside/Downside from CURRENT PRICE to overnight boundaries
+                        const upsidePotential = overnightHigh - currentPrice; // Can be negative if above
+                        const downsideRisk = currentPrice - overnightLow;
+                        const biasAValid = overnightRange > 0;
 
                         // === BIAS B: IB Range (8:20 → 9:30) ===
                         // % from IB high = where CURRENT PRICE is relative to IB high
@@ -14869,15 +14970,21 @@ const ZoneParticipation = () => {
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
                                   <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 6, padding: 8, textAlign: 'center' }}>
-                                    <div style={{ fontSize: 8, color: '#666', marginBottom: 2 }}>DAY RANGE</div>
+                                    <div style={{ fontSize: 8, color: '#666', marginBottom: 2 }}>O/N RANGE</div>
                                     <div style={{ fontSize: 16, fontWeight: 700, color: '#3B82F6' }}>
-                                      {dayRange > 0 ? dayRange.toFixed(0) : '--'}
+                                      {overnightRange > 0 ? overnightRange.toFixed(1) : '--'}
+                                    </div>
+                                    <div style={{ fontSize: 7, color: '#555' }}>
+                                      {overnightHigh > 0 && overnightLow > 0 ? `${overnightLow.toFixed(1)}-${overnightHigh.toFixed(1)}` : ''}
                                     </div>
                                   </div>
                                   <div style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 6, padding: 8, textAlign: 'center' }}>
                                     <div style={{ fontSize: 8, color: '#666', marginBottom: 2 }}>% FROM HIGH</div>
-                                    <div style={{ fontSize: 16, fontWeight: 700, color: aboveOvernightHigh ? '#00ff88' : biasA.color }}>
+                                    <div style={{ fontSize: 14, fontWeight: 700, color: aboveOvernightHigh ? '#00ff88' : biasA.color }}>
                                       {!biasAValid ? '--' : aboveOvernightHigh ? 'ABOVE' : `${Math.max(0, pctFromHigh).toFixed(0)}%`}
+                                    </div>
+                                    <div style={{ fontSize: 10, fontWeight: 600, color: ptsFromHigh >= 0 ? '#ff4466' : '#00ff88' }}>
+                                      {biasAValid ? `${ptsFromHigh >= 0 ? '-' : '+'}${Math.abs(ptsFromHigh).toFixed(1)} pts` : ''}
                                     </div>
                                   </div>
                                 </div>
@@ -15283,6 +15390,7 @@ const MarketProfile = ({ selectedContract }) => {
   const [tpoZoomed, setTpoZoomed] = useState(false); // Zoom: finer tick size for more detail
   const [hideNonIB, setHideNonIB] = useState(false); // Hide sessions without IB in 1-week charts
   const [chartCrosshair, setChartCrosshair] = useState({ show: false, x: 0, y: 0, price: 0, dayIdx: -1, day: null }); // Crosshair for 4-week chart
+  const [chartTooltipPinned, setChartTooltipPinned] = useState(false); // Whether tooltip is pinned (click to show/hide)
   const chart1wInitialized = React.useRef(false);
   const chart4wInitialized = React.useRef(false);
   const chart1wRef = React.useRef(null);
@@ -16429,8 +16537,8 @@ const MarketProfile = ({ selectedContract }) => {
                 ? (tpoZoomed ? 0.1 : 1)    // BTC: $1 normal, $0.10 zoomed
                 : (tpoZoomed ? 0.05 : 0.3); // GC: $0.30 normal, $0.05 zoomed
               const vpSubRows = Math.max(2, Math.round(tickSize / vpTickSize)); // Sub-rows per price level
-              const rowHeight = 14;
-              const letterWidth = 11;
+              const rowHeight = tpoZoomed ? 14 : 11; // Smaller rows when unzoomed to fit more on screen
+              const letterWidth = tpoZoomed ? 11 : 10;
               const vpBarWidth = 45;
               const vpGap = 20; // Increased gap to prevent overlap
 
@@ -16847,8 +16955,8 @@ const MarketProfile = ({ selectedContract }) => {
                   overflow: 'hidden',
                   position: 'relative'
                 }}>
-                  {/* Tooltip - matches 4-week style */}
-                  {chartCrosshair.show && chartCrosshair.day && (
+                  {/* Tooltip - Click to show/hide */}
+                  {chartCrosshair.show && chartCrosshair.day && chartTooltipPinned && (
                     <div style={{
                       position: 'absolute',
                       left: chartCrosshair.x + 65,
@@ -16921,7 +17029,7 @@ const MarketProfile = ({ selectedContract }) => {
                   {/* Main Chart */}
                   <div
                     className="tpo-scroll-container"
-                    style={{ flex: 1, overflow: 'auto', position: 'relative', cursor: chartCrosshair.show ? 'none' : 'crosshair' }}
+                    style={{ flex: 1, overflow: 'auto', position: 'relative', cursor: 'crosshair' }}
                     onScroll={(e) => {
                       const ps = document.getElementById('price-scale-1w');
                       const ts = document.getElementById('time-scale-1w');
@@ -16929,7 +17037,8 @@ const MarketProfile = ({ selectedContract }) => {
                       if (ts) ts.scrollLeft = e.target.scrollLeft;
                     }}
                     onMouseMove={(e) => handleMouseMove(e, e.currentTarget)}
-                    onMouseLeave={() => setChartCrosshair({ ...chartCrosshair, show: false })}
+                    onClick={() => setChartTooltipPinned(!chartTooltipPinned)}
+                    onMouseLeave={() => { if (!chartTooltipPinned) setChartCrosshair({ ...chartCrosshair, show: false }); }}
                     ref={(el) => { chart1wRef.current = el; if (el && !chart1wInitialized.current && totalWidth > el.clientWidth) { el.scrollLeft = totalWidth - el.clientWidth; chart1wInitialized.current = true; } }}
                   >
                     {/* Crosshair Lines */}
@@ -17307,8 +17416,8 @@ const MarketProfile = ({ selectedContract }) => {
                 ? (tpoZoomed ? 0.1 : 1)    // BTC: $1 normal, $0.10 zoomed
                 : (tpoZoomed ? 0.05 : 0.3); // GC: $0.30 normal, $0.05 zoomed
               const vpSubRows = Math.max(2, Math.round(tpoTickSize / vpTickSize)); // Sub-rows per price level
-              const rowHeight = 14;
-              const letterWidth = 12; // Wider blocks for 1-hour periods
+              const rowHeight = tpoZoomed ? 14 : 11; // Smaller rows when unzoomed to fit more on screen
+              const letterWidth = tpoZoomed ? 12 : 10; // Narrower blocks when unzoomed
               const vpBarWidth = 50; // Volume profile width per day
               const vpGap = 16; // Gap between TPO and volume profile
 
@@ -17620,8 +17729,8 @@ const MarketProfile = ({ selectedContract }) => {
                   overflow: 'hidden',
                   position: 'relative'
                 }}>
-                  {/* Crosshair tooltip - top right of cursor */}
-                  {chartCrosshair.show && chartCrosshair.day && (
+                  {/* Crosshair tooltip - Click to show/hide */}
+                  {chartCrosshair.show && chartCrosshair.day && chartTooltipPinned && (
                     <div style={{
                       position: 'absolute',
                       left: chartCrosshair.x + 65,
@@ -17698,13 +17807,14 @@ const MarketProfile = ({ selectedContract }) => {
                   <div
                     id="tpo-chart-main"
                     className="tpo-scroll-container"
-                    style={{ flex: 1, overflow: 'auto', position: 'relative', cursor: chartCrosshair.show ? 'none' : 'crosshair' }}
+                    style={{ flex: 1, overflow: 'auto', position: 'relative', cursor: 'crosshair' }}
                     onScroll={(e) => {
                       const ps = document.getElementById('price-scale-4w');
                       if (ps) ps.scrollTop = e.target.scrollTop;
                     }}
                     onMouseMove={(e) => handleMouseMove(e, e.currentTarget)}
-                    onMouseLeave={() => setChartCrosshair({ ...chartCrosshair, show: false })}
+                    onClick={() => setChartTooltipPinned(!chartTooltipPinned)}
+                    onMouseLeave={() => { if (!chartTooltipPinned) setChartCrosshair({ ...chartCrosshair, show: false }); }}
                     ref={(el) => {
                       chart4wRef.current = el;
                       // Auto-scroll to latest date (rightmost) on initial mount only
@@ -18192,8 +18302,8 @@ const MarketProfile = ({ selectedContract }) => {
                   overflow: 'hidden',
                   position: 'relative'
                 }}>
-                  {/* Crosshair tooltip */}
-                  {chartCrosshair.show && chartCrosshair.day && (
+                  {/* Crosshair tooltip - Click to show/hide */}
+                  {chartCrosshair.show && chartCrosshair.day && chartTooltipPinned && (
                     <div style={{
                       position: 'absolute',
                       left: Math.max(60, Math.min(chartCrosshair.x + 60, 500)),
@@ -18252,7 +18362,8 @@ const MarketProfile = ({ selectedContract }) => {
                       if (ps) ps.scrollTop = e.target.scrollTop;
                     }}
                     onMouseMove={(e) => handleMouseMove(e, e.currentTarget)}
-                    onMouseLeave={() => setChartCrosshair({ ...chartCrosshair, show: false })}
+                    onClick={() => setChartTooltipPinned(!chartTooltipPinned)}
+                    onMouseLeave={() => { if (!chartTooltipPinned) setChartCrosshair({ ...chartCrosshair, show: false }); }}
                   >
                     {/* Crosshair lines */}
                     {chartCrosshair.show && chartCrosshair.clientX && (
@@ -20729,6 +20840,361 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
       {/* Signal Matrix */}
       <SignalMatrix metrics={metrics} settings={settings} />
 
+      {/* Fibonacci Levels & Range Location */}
+      {(() => {
+        const dayHigh = metrics.dayHigh || metrics.day_high || 0;
+        const dayLow = metrics.dayLow || metrics.day_low || 0;
+        const currentPrice = metrics.current_price || 0;
+        const dayRange = dayHigh - dayLow;
+
+        // Skip rendering if we don't have valid data
+        if (dayRange <= 0 || currentPrice <= 0) {
+          return (
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(249,115,22,0.05) 0%, rgba(255,68,102,0.05) 100%)',
+              border: '1px solid rgba(249,115,22,0.3)',
+              borderRadius: 16,
+              padding: 20,
+              marginTop: 20,
+              textAlign: 'center'
+            }}>
+              <h3 style={{ margin: 0, color: '#f97316', fontSize: 14, marginBottom: 8 }}>📐 Fibonacci Levels & Range Analysis</h3>
+              <div style={{ fontSize: 12, color: '#666' }}>Awaiting market data...</div>
+            </div>
+          );
+        }
+
+        // Calculate Fibonacci retracement levels from HIGH (0% = high, 100% = low)
+        // Retracement measures pullback FROM the high
+        const fibLevels = [
+          { level: '0%', price: dayHigh, color: '#ff4466', desc: 'Day High' },
+          { level: '23.6%', price: dayHigh - (dayRange * 0.236), color: '#ff6b6b', desc: 'Minor Retracement' },
+          { level: '38.2%', price: dayHigh - (dayRange * 0.382), color: '#ffd93d', desc: 'Shallow Retracement' },
+          { level: '50%', price: dayHigh - (dayRange * 0.5), color: '#f97316', desc: 'Mid Point' },
+          { level: '61.8%', price: dayHigh - (dayRange * 0.618), color: '#00bcd4', desc: 'Golden Ratio' },
+          { level: '78.6%', price: dayHigh - (dayRange * 0.786), color: '#10B981', desc: 'Deep Retracement' },
+          { level: '100%', price: dayLow, color: '#00ff88', desc: 'Day Low' },
+        ];
+
+        // Calculate current position in range (0 = low, 1 = high), clamped 0-1 for display
+        const rawRangePosition = (currentPrice - dayLow) / dayRange;
+        const rangePosition = Math.min(1, Math.max(0, rawRangePosition));
+
+        // Determine range zone (inverted: high = premium, low = discount)
+        // rawPos is the actual position (can be > 1 or < 0 if outside range)
+        const getRangeZone = (pos, rawPos = pos) => {
+          // Check if outside range (above 100% or below 0%)
+          if (rawPos > 1 || rawPos < 0) return { zone: 'Outside Range', color: '#a855f7', bg: 'rgba(168,85,247,0.15)' };
+          if (pos >= 0.75) return { zone: 'Highly Premium', color: '#ff4466', bg: 'rgba(255,68,102,0.15)' };
+          if (pos >= 0.5) return { zone: 'Premium', color: '#f97316', bg: 'rgba(249,115,22,0.15)' };
+          if (pos >= 0.25) return { zone: 'Discount', color: '#00bcd4', bg: 'rgba(0,188,212,0.15)' };
+          return { zone: 'Highly Discount', color: '#00ff88', bg: 'rgba(0,255,136,0.15)' };
+        };
+
+        const dayZone = getRangeZone(rangePosition, rawRangePosition);
+
+        // Session-specific ranges
+        const ibHigh = metrics.ib_high || 0;
+        const ibLow = metrics.ib_low || 0;
+        const ibRange = ibHigh - ibLow;
+        const ibPosition = ibRange > 0 ? (currentPrice - ibLow) / ibRange : null;
+        const ibZone = ibPosition !== null ? getRangeZone(Math.min(1, Math.max(0, ibPosition)), ibPosition) : null;
+
+        // Get current session based on time
+        const now = new Date();
+        const etHour = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"})).getHours();
+        const etMin = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"})).getMinutes();
+        const timeVal = etHour * 100 + etMin;
+
+        // Session active checks
+        const isLondonActive = timeVal >= 300 && timeVal < 600; // 3:00 AM - 6:00 AM ET
+        const isUSIBActive = timeVal >= 820 && timeVal < 930; // 8:20 AM - 9:30 AM ET (US IB)
+        const isNY1HActive = timeVal >= 930 && timeVal < 1030; // Same as IB
+        const isNY2HActive = timeVal >= 1030 && timeVal < 1130; // 10:30 AM - 11:30 AM ET
+
+        // Find nearest Fib level
+        const nearestFib = fibLevels.reduce((nearest, fib) => {
+          const dist = Math.abs(currentPrice - fib.price);
+          return dist < nearest.dist ? { ...fib, dist } : nearest;
+        }, { dist: Infinity });
+
+        return (
+          <div style={{
+            background: 'linear-gradient(135deg, rgba(249,115,22,0.05) 0%, rgba(255,68,102,0.05) 100%)',
+            border: '1px solid rgba(249,115,22,0.3)',
+            borderRadius: 16,
+            padding: 20,
+            marginTop: 20
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, color: '#f97316', fontSize: 14 }}>📐 Fibonacci Levels & Range Analysis</h3>
+              <span style={{
+                padding: '4px 12px',
+                borderRadius: 20,
+                fontSize: 11,
+                fontWeight: 600,
+                background: dayZone.bg,
+                color: dayZone.color,
+              }}>
+                {dayZone.zone}
+              </span>
+            </div>
+
+            {/* Day Range, Fibonacci & Session Range - Horizontal Layout */}
+            <div style={{ display: 'flex', gap: 20 }}>
+              {/* Left: Day Range Position */}
+              <div style={{ flex: '0 0 auto' }}>
+                <div style={{ fontSize: 10, color: '#888', marginBottom: 8 }}>Day Range</div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: 420, fontSize: 7, textAlign: 'right', color: '#666' }}>
+                    <span style={{ color: '#ff4466' }}>PREM</span>
+                    <span>75%</span>
+                    <span>50%</span>
+                    <span>25%</span>
+                    <span style={{ color: '#00ff88' }}>DISC</span>
+                  </div>
+                  <div style={{ position: 'relative', width: 12, height: 420, borderRadius: 6, overflow: 'hidden' }}>
+                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, #ff4466 0%, #f97316 25%, #666 50%, #00bcd4 75%, #00ff88 100%)', opacity: 0.5 }} />
+                    <div style={{
+                      position: 'absolute',
+                      top: `${Math.min(100, Math.max(0, (1 - rangePosition) * 100))}%`,
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      width: 18,
+                      height: 4,
+                      background: '#fff',
+                      borderRadius: 2,
+                      boxShadow: '0 0 6px #fff',
+                      zIndex: 10
+                    }} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: 420, fontSize: 9 }}>
+                    <div style={{ color: '#ff4466' }}>{dayHigh.toFixed(2)}</div>
+                    <div style={{ padding: '4px 6px', background: dayZone.bg, borderRadius: 4, textAlign: 'center' }}>
+                      <div style={{ fontSize: 8, color: dayZone.color, fontWeight: 600 }}>{dayZone.zone}</div>
+                      <div style={{ fontSize: 9, color: '#fff' }}>{(rawRangePosition * 100).toFixed(0)}%</div>
+                    </div>
+                    <div style={{ color: '#00ff88' }}>{dayLow.toFixed(2)}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Middle: Fibonacci Retracement */}
+              <div style={{ flex: '0 0 auto' }}>
+                <div style={{ fontSize: 10, color: '#888', marginBottom: 8 }}>Fibonacci Retracement</div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: 420, fontSize: 8, textAlign: 'right', width: 28 }}>
+                    {fibLevels.map((fib, i) => (
+                      <span key={i} style={{ color: fib.color, fontWeight: 500, lineHeight: 1 }}>{fib.level}</span>
+                    ))}
+                  </div>
+                  <div style={{ position: 'relative', width: 12, height: 420, borderRadius: 6, overflow: 'hidden' }}>
+                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, #ff4466 0%, #ff6b6b 16%, #ffd93d 33%, #f97316 50%, #00bcd4 66%, #10B981 83%, #00ff88 100%)', opacity: 0.5 }} />
+                    {fibLevels.map((fib, i) => (
+                      <div key={i} style={{ position: 'absolute', top: `${(i / (fibLevels.length - 1)) * 100}%`, left: 0, width: '100%', height: 1, background: `${fib.color}80`, transform: 'translateY(-50%)' }} />
+                    ))}
+                    <div style={{
+                      position: 'absolute',
+                      top: `${Math.min(100, Math.max(0, (1 - rangePosition) * 100))}%`,
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      width: 18,
+                      height: 4,
+                      background: '#fff',
+                      borderRadius: 2,
+                      boxShadow: '0 0 6px #fff',
+                      zIndex: 10
+                    }} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: 420 }}>
+                    {fibLevels.map((fib, i) => {
+                      const isNear = Math.abs(currentPrice - fib.price) < (dayRange * 0.025);
+                      return (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, lineHeight: 1 }}>
+                          <span style={{ fontSize: 10, color: isNear ? '#fff' : '#777', fontWeight: isNear ? 600 : 400, background: isNear ? `${fib.color}30` : 'transparent', padding: isNear ? '1px 3px' : 0, borderRadius: 2 }}>{fib.price.toFixed(2)}</span>
+                          <span style={{ fontSize: 7, color: '#555' }}>{fib.desc}</span>
+                          {isNear && <span style={{ color: fib.color, fontSize: 8 }}>◄</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right: Session Range Location */}
+              <div style={{ flex: 1, borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: 20 }}>
+                <div style={{ fontSize: 10, color: '#888', marginBottom: 10 }}>Session Range Location</div>
+                {(() => {
+                  // Thin bar session card component
+                  const SessionCard = ({ name, timeRange, color, isActive, high, low, hasData }) => {
+                    const range = high - low;
+                    const pos = range > 0 ? (currentPrice - low) / range : null;
+                    const clamped = pos !== null ? Math.min(1, Math.max(0, pos)) : null;
+                    const zone = pos !== null ? getRangeZone(clamped, pos) : null;
+                    const showBar = hasData && high > 0 && low > 0 && range > 0;
+
+                    return (
+                      <div style={{
+                        background: isActive ? `${color}12` : 'rgba(0,0,0,0.25)',
+                        border: `1px solid ${isActive ? `${color}60` : 'rgba(255,255,255,0.06)'}`,
+                        borderRadius: 8,
+                        padding: '8px 10px',
+                        flex: '1 1 0',
+                        minWidth: 0
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <div>
+                            <div style={{ fontSize: 9, color: color, fontWeight: 600 }}>{name}</div>
+                            <div style={{ fontSize: 7, color: '#555' }}>{timeRange}</div>
+                          </div>
+                          {isActive && <span style={{ fontSize: 6, background: color, color: '#000', padding: '2px 4px', borderRadius: 3, fontWeight: 700 }}>LIVE</span>}
+                        </div>
+                        {showBar ? (
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <div style={{ position: 'relative', width: 6, height: 140, borderRadius: 3, overflow: 'hidden' }}>
+                              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, #ff4466 0%, #f97316 25%, #666 50%, #00bcd4 75%, #00ff88 100%)', opacity: 0.5 }} />
+                              <div style={{
+                                position: 'absolute',
+                                top: `${Math.min(100, Math.max(0, (1 - clamped) * 100))}%`,
+                                left: '50%',
+                                transform: 'translate(-50%, -50%)',
+                                width: 10,
+                                height: 3,
+                                background: color,
+                                borderRadius: 2,
+                                boxShadow: `0 0 4px ${color}`,
+                              }} />
+                            </div>
+                            <div style={{ flex: 1, fontSize: 8, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: 140 }}>
+                              <div style={{ color: '#ff4466', fontWeight: 500 }}>{high.toFixed(2)}</div>
+                              <div>
+                                <div style={{ color: zone?.color, fontWeight: 600, fontSize: 7 }}>{zone?.zone}</div>
+                                <div style={{ color: '#888', fontSize: 7 }}>{(clamped * 100).toFixed(0)}%</div>
+                              </div>
+                              <div style={{ color: '#00ff88', fontWeight: 500 }}>{low.toFixed(2)}</div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 8, color: '#444', textAlign: 'center', padding: '45px 0' }}>
+                            {isActive ? 'Building...' : hasData ? 'No data' : 'Waiting'}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  };
+
+                  // Get ended sessions and IBS from liveData (Databento)
+                  // API returns snake_case: ended_sessions, ibs
+                  const endedSessions = metrics.ended_sessions || metrics.endedSessions || {};
+                  const ibs = metrics.ibs || {};
+
+                  // London session data from Databento (3:00-6:00 ET)
+                  const londonSession = endedSessions.london || {};
+                  let londonHigh = londonSession.high || 0;
+                  let londonLow = (londonSession.low && londonSession.low > 0 && londonSession.low < 999999) ? londonSession.low : 0;
+                  // Also check London IB from ibs (03:00-04:00)
+                  const londonIB = ibs.london || {};
+                  if (londonIB.high > 0) londonHigh = Math.max(londonHigh, londonIB.high);
+                  if (londonIB.low > 0 && londonIB.low < 999999) londonLow = londonLow > 0 ? Math.min(londonLow, londonIB.low) : londonIB.low;
+                  // If still in London session, include current session
+                  if (isLondonActive && metrics.sessionHigh > 0) {
+                    londonHigh = Math.max(londonHigh, metrics.sessionHigh);
+                  }
+                  if (isLondonActive && metrics.sessionLow > 0 && metrics.sessionLow < 999999) {
+                    londonLow = londonLow > 0 ? Math.min(londonLow, metrics.sessionLow) : metrics.sessionLow;
+                  }
+
+                  // NY 1H session data from Databento (9:30-10:30)
+                  const ny1hSession = endedSessions.ny_1h || {};
+                  const ny1hHigh = ny1hSession.high || (isNY1HActive ? metrics.sessionHigh : 0);
+                  const ny1hLow = ny1hSession.low || (isNY1HActive ? metrics.sessionLow : 0);
+
+                  // NY 2H session data from Databento (10:30-11:30)
+                  const ny2hSession = endedSessions.ny_2h || {};
+                  const ny2hHigh = ny2hSession.high || (isNY2HActive ? metrics.sessionHigh : 0);
+                  const ny2hLow = ny2hSession.low || (isNY2HActive ? metrics.sessionLow : 0);
+
+                  // US IB from Databento (08:20-09:30)
+                  const usIB = ibs.us || {};
+                  const usIBEnded = endedSessions.us_ib || {};
+                  const usIBHigh = usIB.high || usIBEnded.high || 0;
+                  const usIBLow = (usIB.low && usIB.low > 0 && usIB.low < 999999) ? usIB.low :
+                                  (usIBEnded.low && usIBEnded.low > 0 ? usIBEnded.low : 0);
+
+                  // Overnight: 18:00 - 9:30 ET (from full day fetch)
+                  const overnightHigh = metrics.overnight_high || metrics.overnightHigh || metrics.globex_high || 0;
+                  const overnightLow = metrics.overnight_low || metrics.overnightLow || metrics.globex_low || 0;
+                  const isOvernightActive = timeVal >= 1800 || timeVal < 820; // 18:00 to 8:20 ET
+
+                  // NY Session: 9:30 - 17:00 ET (combine ny_1h, ny_2h, lunch, ny_pm, ny_close)
+                  // Calculate from ended sessions if available
+                  let nySessionHigh = 0;
+                  let nySessionLow = 999999;
+                  ['ny_1h', 'ny_2h', 'lunch', 'ny_pm', 'ny_close'].forEach(sessId => {
+                    const sess = endedSessions[sessId];
+                    if (sess?.high > 0) nySessionHigh = Math.max(nySessionHigh, sess.high);
+                    if (sess?.low > 0 && sess?.low < 999999) nySessionLow = Math.min(nySessionLow, sess.low);
+                  });
+                  // If still in NY session, use current session high/low
+                  const isNYSessionActive = timeVal >= 930 && timeVal < 1700;
+                  if (isNYSessionActive && metrics.sessionHigh > 0) {
+                    nySessionHigh = Math.max(nySessionHigh, metrics.sessionHigh);
+                  }
+                  if (isNYSessionActive && metrics.sessionLow > 0 && metrics.sessionLow < 999999) {
+                    nySessionLow = Math.min(nySessionLow, metrics.sessionLow);
+                  }
+                  if (nySessionLow === 999999) nySessionLow = 0;
+
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {/* Row 1: Overnight & NY Session */}
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <SessionCard name="Overnight" timeRange="18:00-8:20" color="#8b5cf6" isActive={isOvernightActive} high={overnightHigh} low={overnightLow} hasData={overnightHigh > 0} />
+                        <SessionCard name="NY Session" timeRange="9:30-17:00" color="#f59e0b" isActive={isNYSessionActive} high={nySessionHigh} low={nySessionLow} hasData={nySessionHigh > 0} />
+                      </div>
+                      {/* Row 2: London, US IB, NY 1H, NY 2H */}
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <SessionCard name="London" timeRange="3:00-6:00" color="#a855f7" isActive={isLondonActive} high={londonHigh} low={londonLow} hasData={londonHigh > 0} />
+                        <SessionCard name="US IB" timeRange="8:20-9:30" color="#ffaa00" isActive={isUSIBActive} high={usIBHigh} low={usIBLow} hasData={usIBHigh > 0} />
+                        <SessionCard name="NY 1H" timeRange="9:30-10:30" color="#10B981" isActive={isNY1HActive} high={ny1hHigh} low={ny1hLow} hasData={ny1hHigh > 0} />
+                        <SessionCard name="NY 2H" timeRange="10:30-11:30" color="#06B6D4" isActive={isNY2HActive} high={ny2hHigh} low={ny2hLow} hasData={ny2hHigh > 0} />
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Nearest Fib Level Callout */}
+            {nearestFib.price && dayRange > 0 && (
+              <div style={{
+                marginTop: 16,
+                padding: 12,
+                background: `${nearestFib.color}15`,
+                border: `1px solid ${nearestFib.color}50`,
+                borderRadius: 10,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <div>
+                  <div style={{ fontSize: 10, color: '#888' }}>Nearest Fibonacci Level</div>
+                  <div style={{ fontSize: 14, color: nearestFib.color, fontWeight: 700 }}>
+                    {nearestFib.level} @ {nearestFib.price.toFixed(2)}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 10, color: '#888' }}>Distance</div>
+                  <div style={{ fontSize: 14, color: currentPrice > nearestFib.price ? '#00ff88' : '#ff4466', fontWeight: 700 }}>
+                    {currentPrice > nearestFib.price ? '+' : ''}{(currentPrice - nearestFib.price).toFixed(2)}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Market Pulse - Gamma Regime & Volatility Analysis */}
       <div style={{ marginTop: 20 }}>
         <MarketPulse gexData={gexData} currentPrice={metrics.current_price} />
@@ -20738,94 +21204,1459 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
       <div style={{ marginTop: 20 }}>
         <GEXPanel gexData={gexData} currentPrice={metrics.current_price} />
       </div>
+
+      {/* Contract Rollover Indicator */}
+      {metrics.rollover && (
+        <div style={{
+          marginTop: 20,
+          padding: 16,
+          background: 'linear-gradient(135deg, rgba(30,30,35,0.95) 0%, rgba(20,20,25,0.98) 100%)',
+          borderRadius: 12,
+          border: `1px solid ${
+            metrics.rollover.roll_signal === 'ROLL' ? '#ef4444' :
+            metrics.rollover.roll_signal === 'CONSIDER' ? '#f59e0b' : '#333'
+          }`
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 16 }}>📊</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>CONTRACT ROLLOVER</span>
+            </div>
+            <div style={{
+              padding: '4px 12px',
+              borderRadius: 6,
+              fontSize: 11,
+              fontWeight: 700,
+              background: metrics.rollover.roll_signal === 'ROLL' ? 'rgba(239,68,68,0.2)' :
+                         metrics.rollover.roll_signal === 'CONSIDER' ? 'rgba(245,158,11,0.2)' : 'rgba(34,197,94,0.2)',
+              color: metrics.rollover.roll_signal === 'ROLL' ? '#ef4444' :
+                     metrics.rollover.roll_signal === 'CONSIDER' ? '#f59e0b' : '#22c55e',
+              border: `1px solid ${
+                metrics.rollover.roll_signal === 'ROLL' ? '#ef4444' :
+                metrics.rollover.roll_signal === 'CONSIDER' ? '#f59e0b' : '#22c55e'
+              }40`
+            }}>
+              {metrics.rollover.roll_signal === 'ROLL' ? '🔄 ROLL NOW' :
+               metrics.rollover.roll_signal === 'CONSIDER' ? '⚠️ CONSIDER ROLLING' : '✓ HOLD'}
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 1fr', gap: 16, alignItems: 'center' }}>
+            {/* Front Month */}
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 10, color: '#888', marginBottom: 4 }}>CURRENT</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#00aaff' }}>
+                {metrics.rollover.front_month || metrics.contract || 'GCG26'}
+              </div>
+              <div style={{ fontSize: 9, color: '#666', marginTop: 2 }}>
+                {metrics.rollover.front_month_name || metrics.contract_name || ''}
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#fff', marginTop: 8, fontFamily: 'monospace' }}>
+                {(metrics.rollover.front_month_oi || 0).toLocaleString()}
+              </div>
+              <div style={{ fontSize: 9, color: '#888' }}>Open Interest</div>
+            </div>
+
+            {/* Arrow & Ratio */}
+            <div style={{ textAlign: 'center' }}>
+              <div style={{
+                fontSize: 24,
+                color: metrics.rollover.oi_ratio >= 1 ? '#ef4444' :
+                       metrics.rollover.oi_ratio >= 0.75 ? '#f59e0b' : '#22c55e'
+              }}>
+                {metrics.rollover.oi_ratio >= 1 ? '⟹' : '→'}
+              </div>
+              <div style={{
+                fontSize: 16,
+                fontWeight: 700,
+                color: metrics.rollover.oi_ratio >= 1 ? '#ef4444' :
+                       metrics.rollover.oi_ratio >= 0.75 ? '#f59e0b' : '#22c55e',
+                fontFamily: 'monospace'
+              }}>
+                {((metrics.rollover.oi_ratio || 0) * 100).toFixed(0)}%
+              </div>
+              <div style={{ fontSize: 8, color: '#666' }}>Next/Current</div>
+            </div>
+
+            {/* Next Month */}
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 10, color: '#888', marginBottom: 4 }}>NEXT</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: metrics.rollover.oi_ratio >= 1 ? '#ef4444' : '#f59e0b' }}>
+                {metrics.rollover.next_month || 'GCJ26'}
+              </div>
+              <div style={{ fontSize: 9, color: '#666', marginTop: 2 }}>
+                {metrics.rollover.next_month_name || ''}
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#fff', marginTop: 8, fontFamily: 'monospace' }}>
+                {(metrics.rollover.next_month_oi || 0).toLocaleString()}
+              </div>
+              <div style={{ fontSize: 9, color: '#888' }}>Open Interest</div>
+            </div>
+          </div>
+
+          {/* Progress Bar */}
+          <div style={{ marginTop: 16 }}>
+            <div style={{
+              height: 8,
+              background: 'rgba(255,255,255,0.1)',
+              borderRadius: 4,
+              overflow: 'hidden',
+              position: 'relative'
+            }}>
+              <div style={{
+                width: `${Math.min((metrics.rollover.oi_ratio || 0) * 100, 100)}%`,
+                height: '100%',
+                background: metrics.rollover.oi_ratio >= 1 ?
+                  'linear-gradient(90deg, #ef4444, #dc2626)' :
+                  metrics.rollover.oi_ratio >= 0.75 ?
+                  'linear-gradient(90deg, #f59e0b, #d97706)' :
+                  'linear-gradient(90deg, #22c55e, #16a34a)',
+                transition: 'width 0.5s ease'
+              }} />
+              {/* 75% marker */}
+              <div style={{
+                position: 'absolute',
+                left: '75%',
+                top: 0,
+                bottom: 0,
+                width: 2,
+                background: '#f59e0b',
+                opacity: 0.5
+              }} />
+              {/* 100% marker */}
+              <div style={{
+                position: 'absolute',
+                left: '100%',
+                top: 0,
+                bottom: 0,
+                width: 2,
+                background: '#ef4444',
+                opacity: 0.5
+              }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+              <span style={{ fontSize: 8, color: '#666' }}>0%</span>
+              <span style={{ fontSize: 8, color: '#f59e0b' }}>75% Consider</span>
+              <span style={{ fontSize: 8, color: '#ef4444' }}>100% Roll</span>
+            </div>
+          </div>
+
+          {/* Last Update */}
+          {metrics.rollover.last_update && (
+            <div style={{ marginTop: 12, textAlign: 'center', fontSize: 9, color: '#555' }}>
+              OI Updated: {metrics.rollover.last_update}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
 
-// Backtest Dashboard Component
-const BacktestDashboard = ({ data, trades, dateRange, setDateRange }) => {
+// Backtest Dashboard Component - Condensed Layout with Deep Analytics
+const BacktestDashboard = ({ data, trades, dateRange, setDateRange, extendedData }) => {
   const [selectedYear, setSelectedYear] = useState(2025);
   const [pendingDateRange, setPendingDateRange] = useState(dateRange);
+  const [activeSection, setActiveSection] = useState('overview');
+  const [hoveredEquityPoint, setHoveredEquityPoint] = useState(null);
+  const [hoveredTpo, setHoveredTpo] = useState(null);
+  const [hoveredWyckoff, setHoveredWyckoff] = useState(null);
+
+  // Extract extended data including feature statistics
+  const { metadata, sessions, volumeProfiles, bigVolumeDays, supportResistance, seasonality, dailyCandles, featureStatistics, distributions } = extendedData || {};
 
   useEffect(() => {
-    if (data.yearly_pnl.length > 0 && !data.yearly_pnl.find(y => y.year === selectedYear)) {
+    if (data.yearly_pnl?.length > 0 && !data.yearly_pnl.find(y => y.year === selectedYear)) {
       setSelectedYear(data.yearly_pnl[data.yearly_pnl.length - 1].year);
     }
   }, [data.yearly_pnl, selectedYear]);
 
-  const handleApplyFilter = () => {
-    setDateRange(pendingDateRange);
-  };
-
+  const handleApplyFilter = () => setDateRange(pendingDateRange);
   const handleResetFilter = () => {
-    const defaultRange = { start: '2025-08-20', end: '2025-12-28' };
+    const defaultRange = { start: metadata?.data_range?.start || '2021-01-27', end: metadata?.data_range?.end || '2026-01-27' };
     setPendingDateRange(defaultRange);
     setDateRange(defaultRange);
   };
 
+  // Calculate metrics
+  const totalDays = sessions?.length || 0;
+  const bullishDays = sessions?.filter(s => s.direction === 'bullish').length || 0;
+  const bearishDays = sessions?.filter(s => s.direction === 'bearish').length || 0;
+  const avgRange = sessions?.length ? (sessions.reduce((sum, s) => sum + (s.range || 0), 0) / sessions.length).toFixed(2) : 0;
+  const avgVolume = sessions?.length ? Math.round(sessions.reduce((sum, s) => sum + (s.volume || 0), 0) / sessions.length) : 0;
+
+  // Calculate equity curve with drawdown and profit metrics
+  const equityData = useMemo(() => {
+    if (!trades?.length) return [];
+    let equity = 100000;
+    let peak = equity;
+    let maxDDSoFar = 0;  // Track worst drawdown experienced so far
+    return trades.map((t, i) => {
+      equity += t.pnl || 0;
+      peak = Math.max(peak, equity);
+      const fromPeak = peak - equity;  // Dollar amount below peak
+      const drawdownPct = peak > 0 ? (fromPeak / peak) * 100 : 0;
+      maxDDSoFar = Math.max(maxDDSoFar, drawdownPct);  // Track max DD seen
+      const totalProfit = equity - 100000;  // Total profit from start
+      const totalProfitPct = (totalProfit / 100000) * 100;
+      return {
+        date: t.date,
+        equity,
+        peak,
+        fromPeak,  // $ below peak
+        drawdown: drawdownPct,  // % below peak (0 when at peak)
+        maxDrawdownSoFar: maxDDSoFar,  // Worst DD experienced up to this point
+        totalProfit,
+        totalProfitPct,
+        pnl: t.pnl,
+        trade: t,
+        index: i
+      };
+    });
+  }, [trades]);
+
+  const maxDrawdown = equityData.length ? Math.max(...equityData.map(e => e.drawdown)) : 0;
+  const finalEquity = equityData.length ? equityData[equityData.length - 1].equity : 100000;
+  const totalReturn = ((finalEquity - 100000) / 100000) * 100;
+
+  // Win/Loss analysis
+  const winners = trades?.filter(t => t.pnl > 0) || [];
+  const losers = trades?.filter(t => t.pnl <= 0) || [];
+  const avgWin = winners.length ? winners.reduce((s, t) => s + t.pnl, 0) / winners.length : 0;
+  const avgLoss = losers.length ? Math.abs(losers.reduce((s, t) => s + t.pnl, 0) / losers.length) : 0;
+  const avgRisk = trades?.length ? trades.reduce((s, t) => s + Math.abs((t.entry || 0) - (t.stop_loss || 0)), 0) / trades.length * 100 : 0;
+
+  // Section navigation
+  const sections = [
+    { id: 'overview', label: 'Overview', icon: '📊' },
+    { id: 'analytics', label: 'Deep Analytics', icon: '🔬' },
+    { id: 'features', label: 'Feature Analysis', icon: '🎯' },
+    { id: 'phase', label: 'Phase Detection', icon: '🔄' },
+    { id: 'matrix', label: 'Matrix Analysis', icon: '🧮' },
+    { id: 'seasonality', label: 'Seasonality', icon: '📅' },
+    { id: 'trades', label: 'Trade Log', icon: '📋' }
+  ];
+
+  // Helper to render metric card
+  const MetricCard = ({ label, value, color, sub }) => (
+    <div style={{ background: 'rgba(0,0,0,0.4)', borderRadius: 8, padding: '10px 12px', borderLeft: `3px solid ${color}` }}>
+      <div style={{ fontSize: 9, color: '#666', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
+      {sub && <div style={{ fontSize: 9, color: '#555' }}>{sub}</div>}
+    </div>
+  );
+
+  // TPO Card with cursor-following tooltip
+  const TpoCard = ({ type, count, total, setHoveredTpo }) => {
+    const tpoVisuals = {
+      'P-shape': { desc: 'Rally Day - Close near high. Price spent most time in upper range, indicating buying pressure.', signal: 'Bullish', color: '#00ff88', svg: (
+        <svg width="70" height="55" viewBox="0 0 70 55">
+          <rect x="8" y="40" width="10" height="8" fill="#8b5cf6" opacity="0.3" rx="1"/>
+          <rect x="20" y="28" width="10" height="18" fill="#8b5cf6" opacity="0.5" rx="1"/>
+          <rect x="32" y="12" width="10" height="32" fill="#8b5cf6" opacity="0.8" rx="1"/>
+          <rect x="44" y="6" width="10" height="22" fill="#8b5cf6" rx="1"/>
+          <path d="M8 44 Q35 50 58 12" stroke="#00ff88" strokeWidth="2" fill="none" strokeLinecap="round"/>
+          <circle cx="58" cy="12" r="3" fill="#00ff88"/>
+        </svg>
+      )},
+      'b-shape': { desc: 'Selloff Day - Close near low. Price spent most time in lower range, indicating selling pressure.', signal: 'Bearish', color: '#ff4466', svg: (
+        <svg width="70" height="55" viewBox="0 0 70 55">
+          <rect x="8" y="6" width="10" height="22" fill="#8b5cf6" rx="1"/>
+          <rect x="20" y="12" width="10" height="32" fill="#8b5cf6" opacity="0.8" rx="1"/>
+          <rect x="32" y="28" width="10" height="18" fill="#8b5cf6" opacity="0.5" rx="1"/>
+          <rect x="44" y="40" width="10" height="8" fill="#8b5cf6" opacity="0.3" rx="1"/>
+          <path d="M8 12 Q35 6 58 44" stroke="#ff4466" strokeWidth="2" fill="none" strokeLinecap="round"/>
+          <circle cx="58" cy="44" r="3" fill="#ff4466"/>
+        </svg>
+      )},
+      'D-shape': { desc: 'Balanced Day - Normal bell curve distribution. Market in equilibrium, fair value found.', signal: 'Neutral', color: '#f97316', svg: (
+        <svg width="70" height="55" viewBox="0 0 70 55">
+          <rect x="8" y="35" width="10" height="10" fill="#8b5cf6" opacity="0.3" rx="1"/>
+          <rect x="20" y="22" width="10" height="22" fill="#8b5cf6" opacity="0.6" rx="1"/>
+          <rect x="32" y="10" width="10" height="35" fill="#8b5cf6" rx="1"/>
+          <rect x="44" y="22" width="10" height="22" fill="#8b5cf6" opacity="0.6" rx="1"/>
+          <line x1="5" y1="27" x2="65" y2="27" stroke="#f97316" strokeWidth="2" strokeDasharray="4,2"/>
+          <text x="35" y="52" fontSize="8" fill="#f97316" textAnchor="middle">POC</text>
+        </svg>
+      )},
+      'B-shape': { desc: 'Double Distribution - Two value areas formed. Often signals trend change or balance break.', signal: 'Reversal', color: '#f97316', svg: (
+        <svg width="70" height="55" viewBox="0 0 70 55">
+          <rect x="8" y="8" width="10" height="16" fill="#8b5cf6" rx="1"/>
+          <rect x="20" y="14" width="10" height="8" fill="#8b5cf6" opacity="0.4" rx="1"/>
+          <rect x="32" y="22" width="10" height="8" fill="#8b5cf6" opacity="0.2" rx="1"/>
+          <rect x="44" y="32" width="10" height="16" fill="#8b5cf6" rx="1"/>
+          <circle cx="13" cy="16" r="4" fill="none" stroke="#f97316" strokeWidth="2"/>
+          <circle cx="49" cy="40" r="4" fill="none" stroke="#f97316" strokeWidth="2"/>
+          <text x="35" y="52" fontSize="7" fill="#888" textAnchor="middle">2 Value Areas</text>
+        </svg>
+      )},
+      'elongated_up': { desc: 'Strong Uptrend - Elongated profile showing sustained buying. Very bullish momentum.', signal: 'Very Bullish', color: '#00ff88', svg: (
+        <svg width="70" height="55" viewBox="0 0 70 55">
+          <rect x="15" y="6" width="40" height="10" fill="#00ff88" rx="2"/>
+          <rect x="20" y="18" width="30" height="8" fill="#00ff88" opacity="0.7" rx="1"/>
+          <rect x="25" y="28" width="20" height="6" fill="#00ff88" opacity="0.4" rx="1"/>
+          <path d="M10 48 L60 8" stroke="#00ff88" strokeWidth="2.5" strokeLinecap="round"/>
+          <polygon points="60,8 52,12 56,16" fill="#00ff88"/>
+        </svg>
+      )},
+      'elongated_down': { desc: 'Strong Downtrend - Elongated profile showing sustained selling. Very bearish momentum.', signal: 'Very Bearish', color: '#ff4466', svg: (
+        <svg width="70" height="55" viewBox="0 0 70 55">
+          <rect x="25" y="6" width="20" height="6" fill="#ff4466" opacity="0.4" rx="1"/>
+          <rect x="20" y="14" width="30" height="8" fill="#ff4466" opacity="0.7" rx="1"/>
+          <rect x="15" y="24" width="40" height="10" fill="#ff4466" rx="2"/>
+          <path d="M10 8 L60 48" stroke="#ff4466" strokeWidth="2.5" strokeLinecap="round"/>
+          <polygon points="60,48 52,44 56,40" fill="#ff4466"/>
+        </svg>
+      )},
+      'single_print': { desc: 'Single Print Gap - Low volume area indicating weak support/resistance. Often gets filled.', signal: 'Gap Fill', color: '#f97316', svg: (
+        <svg width="70" height="55" viewBox="0 0 70 55">
+          <rect x="20" y="6" width="30" height="14" fill="#8b5cf6" rx="2"/>
+          <rect x="30" y="24" width="4" height="6" fill="#f97316" opacity="0.5"/>
+          <rect x="20" y="34" width="30" height="14" fill="#8b5cf6" rx="2"/>
+          <text x="35" y="29" fontSize="9" fill="#f97316" textAnchor="middle" fontWeight="bold">GAP</text>
+          <path d="M50 20 L55 27 L50 34" stroke="#f97316" strokeWidth="1.5" fill="none" strokeDasharray="2"/>
+        </svg>
+      )}
+    };
+    const visual = tpoVisuals[type] || { desc: 'Market profile type', signal: 'N/A', color: '#888', svg: <svg width="70" height="55"><text x="35" y="30" fontSize="12" fill="#666" textAnchor="middle">?</text></svg> };
+    const pct = total > 0 ? ((count / total) * 100).toFixed(1) : 0;
+
+    return (
+      <div
+        style={{ display: 'inline-block', cursor: 'context-menu' }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setHoveredTpo({ type, count, pct, visual, x: e.clientX, y: e.clientY });
+        }}
+      >
+        <div style={{ background: 'rgba(139,92,246,0.1)', borderRadius: 8, padding: 10, textAlign: 'center', border: '1px solid rgba(139,92,246,0.3)' }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#8b5cf6' }}>{count}</div>
+          <div style={{ fontSize: 9, color: '#888' }}>{formatMetricName(type)}</div>
+        </div>
+      </div>
+    );
+  };
+
+  // Wyckoff Card with cursor-following tooltip
+  const WyckoffCard = ({ phase, count, total, setHoveredWyckoff }) => {
+    const wyckoffVisuals = {
+      'accumulation': { desc: 'Smart money buying at lows after downtrend. Price consolidates in range while institutions accumulate positions quietly.', signal: 'Bullish Setup', color: '#00ff88', svg: (
+        <svg width="80" height="50" viewBox="0 0 80 50">
+          <path d="M5 8 L20 38" stroke="#ff4466" strokeWidth="2" fill="none"/>
+          <rect x="20" y="32" width="50" height="14" fill="rgba(0,255,136,0.1)" stroke="#00ff88" strokeWidth="1.5" strokeDasharray="3" rx="2"/>
+          <path d="M25 38 L35 35 L45 40 L55 36 L65 42" stroke="#888" strokeWidth="1.5" fill="none"/>
+          <path d="M65 35 L75 15" stroke="#00ff88" strokeWidth="2" strokeDasharray="4" fill="none"/>
+          <polygon points="75,15 70,22 73,20" fill="#00ff88"/>
+        </svg>
+      )},
+      'distribution': { desc: 'Smart money selling at highs after uptrend. Price consolidates while institutions distribute positions to retail.', signal: 'Bearish Setup', color: '#ff4466', svg: (
+        <svg width="80" height="50" viewBox="0 0 80 50">
+          <path d="M5 42 L20 12" stroke="#00ff88" strokeWidth="2" fill="none"/>
+          <rect x="20" y="6" width="50" height="14" fill="rgba(255,68,102,0.1)" stroke="#ff4466" strokeWidth="1.5" strokeDasharray="3" rx="2"/>
+          <path d="M25 12 L35 15 L45 10 L55 14 L65 8" stroke="#888" strokeWidth="1.5" fill="none"/>
+          <path d="M65 15 L75 35" stroke="#ff4466" strokeWidth="2" strokeDasharray="4" fill="none"/>
+          <polygon points="75,35 70,28 73,30" fill="#ff4466"/>
+        </svg>
+      )},
+      'markup': { desc: 'Uptrend phase following accumulation. Strong buying pressure with higher highs and higher lows.', signal: 'Buy & Hold', color: '#00ff88', svg: (
+        <svg width="80" height="50" viewBox="0 0 80 50">
+          <path d="M5 45 L20 38 L35 42 L50 30 L65 25 L75 10" stroke="#00ff88" strokeWidth="3" fill="none" strokeLinecap="round"/>
+          <path d="M5 48 L75 20" stroke="#00ff88" strokeWidth="1" opacity="0.3" strokeDasharray="4"/>
+          <polygon points="75,10 68,15 70,18" fill="#00ff88"/>
+          <text x="40" y="48" fontSize="8" fill="#00ff88" textAnchor="middle" fontWeight="bold">MARKUP ↑</text>
+        </svg>
+      )},
+      'markdown': { desc: 'Downtrend phase following distribution. Strong selling pressure with lower highs and lower lows.', signal: 'Sell & Avoid', color: '#ff4466', svg: (
+        <svg width="80" height="50" viewBox="0 0 80 50">
+          <path d="M5 10 L20 15 L35 12 L50 25 L65 30 L75 45" stroke="#ff4466" strokeWidth="3" fill="none" strokeLinecap="round"/>
+          <path d="M5 7 L75 35" stroke="#ff4466" strokeWidth="1" opacity="0.3" strokeDasharray="4"/>
+          <polygon points="75,45 68,40 70,37" fill="#ff4466"/>
+          <text x="40" y="8" fontSize="8" fill="#ff4466" textAnchor="middle" fontWeight="bold">MARKDOWN ↓</text>
+        </svg>
+      )},
+      're_accumulation': { desc: 'Pause within uptrend for more accumulation. Institutions adding to long positions before next leg up.', signal: 'Continue Long', color: '#00bcd4', svg: (
+        <svg width="80" height="50" viewBox="0 0 80 50">
+          <path d="M5 42 L22 28" stroke="#00ff88" strokeWidth="2" fill="none"/>
+          <rect x="22" y="22" width="30" height="12" fill="rgba(0,188,212,0.15)" stroke="#00bcd4" strokeWidth="1.5" strokeDasharray="3" rx="2"/>
+          <path d="M52 25 L75 8" stroke="#00ff88" strokeWidth="2" fill="none"/>
+          <polygon points="75,8 68,12 70,15" fill="#00ff88"/>
+        </svg>
+      )},
+      're_distribution': { desc: 'Pause within downtrend for more distribution. Institutions adding to short positions before next leg down.', signal: 'Continue Short', color: '#f97316', svg: (
+        <svg width="80" height="50" viewBox="0 0 80 50">
+          <path d="M5 8 L22 22" stroke="#ff4466" strokeWidth="2" fill="none"/>
+          <rect x="22" y="18" width="30" height="12" fill="rgba(249,115,22,0.15)" stroke="#f97316" strokeWidth="1.5" strokeDasharray="3" rx="2"/>
+          <path d="M52 25 L75 42" stroke="#ff4466" strokeWidth="2" fill="none"/>
+          <polygon points="75,42 68,38 70,35" fill="#ff4466"/>
+        </svg>
+      )},
+      'trending': { desc: 'Clear directional movement with strong momentum. Follow the trend until signs of exhaustion.', signal: 'Follow Trend', color: '#00bcd4', svg: (
+        <svg width="80" height="50" viewBox="0 0 80 50">
+          <path d="M5 40 L75 10" stroke="#00bcd4" strokeWidth="2.5" strokeLinecap="round"/>
+          <path d="M5 44 L75 14" stroke="#00bcd4" strokeWidth="1" opacity="0.4"/>
+          <path d="M5 36 L75 6" stroke="#00bcd4" strokeWidth="1" opacity="0.4"/>
+          <polygon points="75,10 68,14 70,17" fill="#00bcd4"/>
+        </svg>
+      )},
+      'consolidation': { desc: 'Sideways range-bound price action. Market undecided, wait for breakout direction.', signal: 'Wait for Break', color: '#888', svg: (
+        <svg width="80" height="50" viewBox="0 0 80 50">
+          <line x1="5" y1="15" x2="75" y2="15" stroke="#666" strokeWidth="1.5" strokeDasharray="4"/>
+          <line x1="5" y1="35" x2="75" y2="35" stroke="#666" strokeWidth="1.5" strokeDasharray="4"/>
+          <path d="M8 25 L20 20 L32 28 L44 22 L56 30 L68 24 L75 26" stroke="#f97316" strokeWidth="2" fill="none"/>
+          <text x="40" y="46" fontSize="7" fill="#888" textAnchor="middle">RANGE BOUND</text>
+        </svg>
+      )},
+      'unknown': { desc: 'Unclear market structure. Avoid trading until clearer pattern emerges.', signal: 'No Trade', color: '#666', svg: (
+        <svg width="80" height="50" viewBox="0 0 80 50"><text x="40" y="32" fontSize="24" fill="#666" textAnchor="middle">?</text></svg>
+      )}
+    };
+    const visual = wyckoffVisuals[phase] || wyckoffVisuals['unknown'];
+    const pct = total > 0 ? ((count / total) * 100).toFixed(1) : 0;
+
+    return (
+      <div
+        style={{ display: 'inline-block', cursor: 'context-menu' }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setHoveredWyckoff({ phase, count, pct, visual, x: e.clientX, y: e.clientY });
+        }}
+      >
+        <div style={{ background: 'rgba(0,188,212,0.1)', borderRadius: 8, padding: 10, textAlign: 'center', border: '1px solid rgba(0,188,212,0.3)' }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#00bcd4' }}>{count}</div>
+          <div style={{ fontSize: 9, color: '#888' }}>{phase.replace(/_/g, ' ')}</div>
+        </div>
+      </div>
+    );
+  };
+
+  // Format metric names properly
+  const formatMetricName = (name) => {
+    if (!name) return '';
+    // Handle specific cases
+    const nameMap = {
+      'P-shape': 'P-Shape (Rally)',
+      'b-shape': 'b-Shape (Selloff)',
+      'D-shape': 'D-Shape (Balanced)',
+      'B-shape': 'B-Shape (Double)',
+      'elongated_up': 'Elongated Up',
+      'elongated_down': 'Elongated Down',
+      'single_print': 'Single Print',
+      'no_demand': 'No Demand',
+      'no_supply': 'No Supply',
+      'climax_bullish': 'Bullish Climax',
+      'climax_bearish': 'Bearish Climax',
+      'high_volume': 'High Volume',
+      'low_volume': 'Low Volume',
+      'absorption': 'Absorption',
+      'exhaustion': 'Exhaustion',
+      'normal': 'Normal',
+      'trending': 'Trending',
+      'consolidation': 'Consolidation',
+      'accumulation': 'Accumulation',
+      'distribution': 'Distribution',
+      'markup': 'Markup',
+      'markdown': 'Markdown',
+      're_accumulation': 'Re-Accumulation',
+      're_distribution': 'Re-Distribution',
+      'unknown': 'Unknown',
+      'vsa_no_effort_result': 'VSA: No Effort Result',
+      'vsa_effort_no_result': 'VSA: Effort No Result',
+      'cvd_bearish_divergence': 'CVD Bearish Divergence',
+      'cvd_bullish_divergence': 'CVD Bullish Divergence',
+      'big_trade_bullish': 'Big Trade (Bullish)',
+      'big_trade_bearish': 'Big Trade (Bearish)',
+      'delta_imbalance_bullish': 'Delta Imbalance (Bull)',
+      'delta_imbalance_bearish': 'Delta Imbalance (Bear)',
+      'absorption_bullish': 'Absorption (Bullish)',
+      'absorption_bearish': 'Absorption (Bearish)',
+      'institutional_accumulation': 'Institutional Activity',
+      'stop_hunt': 'Stop Hunt',
+      'TARGET': 'Target Hit',
+      'STOP_LOSS': 'Stop Loss',
+      'TIME_EXIT': 'Time Exit',
+    };
+    return nameMap[name] || name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  };
+
+  // Metric explanations for tooltips
+  const metricTooltips = {
+    // TPO Types
+    'P-shape': 'Close near high, rally day. Often bullish continuation.',
+    'b-shape': 'Close near low, selloff day. Often bearish continuation.',
+    'D-shape': 'Balanced day, close near middle. Market in equilibrium.',
+    'B-shape': 'Double distribution - two value areas. Trend change signal.',
+    'elongated_up': 'Strong upward momentum, close in upper range.',
+    'elongated_down': 'Strong downward momentum, close in lower range.',
+    // Volume
+    'no_demand': 'Low volume on up move - lack of buying interest.',
+    'no_supply': 'Low volume on down move - lack of selling pressure.',
+    'climax_bullish': 'Extreme volume on up move - potential exhaustion.',
+    'climax_bearish': 'Extreme volume on down move - potential exhaustion.',
+    'absorption': 'High volume, small range - large orders absorbed.',
+    'exhaustion': 'Decreasing volume on trend - momentum fading.',
+    'normal': 'Average volume with typical price action.',
+    'high_volume': 'Above average volume - increased participation.',
+    // Wyckoff
+    'accumulation': 'Smart money buying at lows. Bullish setup forming.',
+    'distribution': 'Smart money selling at highs. Bearish setup forming.',
+    'markup': 'Uptrend phase - prices rising with momentum.',
+    'markdown': 'Downtrend phase - prices falling with momentum.',
+    're_accumulation': 'Pause in uptrend for more accumulation.',
+    're_distribution': 'Pause in downtrend for more distribution.',
+    // Order Flow Patterns
+    'vsa_no_effort_result': 'Volume Spread Analysis: Price moved without matching volume effort.',
+    'cvd_bearish_divergence': 'Cumulative Volume Delta diverges bearish from price.',
+    'cvd_bullish_divergence': 'Cumulative Volume Delta diverges bullish from price.',
+    'stop_hunt': 'Price spiked to trigger stop losses then reversed.',
+    'absorption_bullish': 'Large buy orders absorbing selling pressure.',
+    'absorption_bearish': 'Large sell orders absorbing buying pressure.',
+    'institutional_accumulation': 'Signs of institutional buying activity.',
+    'delta_imbalance_bullish': 'Strong buying pressure shown by delta imbalance.',
+    'delta_imbalance_bearish': 'Strong selling pressure shown by delta imbalance.',
+    'big_trade_bullish': 'Large institutional buy order detected.',
+    'big_trade_bearish': 'Large institutional sell order detected.',
+    // Exit Reasons
+    'TARGET': 'Trade hit profit target - always a winner.',
+    'STOP_LOSS': 'Trade hit stop loss - always a loss (risk management).',
+    'TIME_EXIT': 'Trade closed at max holding period.',
+  };
+
+  // Helper to render feature stat bar with cursor-following tooltip
+  const [hoveredFeature, setHoveredFeature] = useState(null);
+  const FeatureBar = ({ label, wins, total, pnl, color }) => {
+    const wr = total > 0 ? (wins / total * 100).toFixed(0) : 0;
+    const formattedLabel = formatMetricName(label);
+    const tooltip = metricTooltips[label];
+
+    return (
+      <div
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', cursor: 'help' }}
+        onMouseMove={(e) => setHoveredFeature({ label, formattedLabel, wr, total, pnl, color, tooltip, x: e.clientX, y: e.clientY })}
+        onMouseLeave={() => setHoveredFeature(null)}
+      >
+        <div style={{ width: 150, fontSize: 11, color: '#ccc' }}>
+          {formattedLabel}
+        </div>
+        <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: 4, height: 18, position: 'relative', overflow: 'hidden', minWidth: 80 }}>
+          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${wr}%`, background: color, borderRadius: 4 }} />
+          <div style={{ position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)', fontSize: 10, fontWeight: 600, color: '#fff' }}>{wr}%</div>
+        </div>
+        <div style={{ width: 40, fontSize: 10, color: '#888', textAlign: 'right' }}>{total}</div>
+        <div style={{ width: 65, fontSize: 10, color: pnl >= 0 ? '#00ff88' : '#ff4466', textAlign: 'right', fontWeight: 600 }}>${(pnl/1000).toFixed(1)}K</div>
+      </div>
+    );
+  };
+
+  // Info tooltip for section headers - cursor following
+  const [hoveredInfo, setHoveredInfo] = useState(null);
+  const InfoTooltip = ({ id, title, content, color }) => (
+    <span
+      style={{ cursor: 'pointer', fontSize: 12, color: '#666', opacity: 0.7, marginLeft: 8 }}
+      onMouseMove={(e) => setHoveredInfo({ id, title, content, color, x: e.clientX, y: e.clientY })}
+      onMouseLeave={() => setHoveredInfo(null)}
+    >ⓘ</span>
+  );
+
+  // Metric explanations
+  const metricExplanations = {
+    tpo: {
+      title: 'TPO Profile Types',
+      content: 'Time Price Opportunity (TPO) profiles show where price spent the most time. P-shape = rally day (close near high). b-shape = selloff day (close near low). D-shape = balanced day. B-shape = double distribution with two value areas.'
+    },
+    volume: {
+      title: 'Volume Patterns',
+      content: 'Volume analysis reveals institutional activity. Climax = extreme volume with large range. Absorption = high volume but small range (accumulation). No Demand/Supply = low volume indicating lack of interest. Exhaustion = decreasing volume on trend continuation.'
+    },
+    wyckoff: {
+      title: 'Wyckoff Phases',
+      content: 'Market cycle phases based on Wyckoff methodology. Accumulation = institutional buying at lows. Distribution = institutional selling at highs. Markup = uptrend phase. Markdown = downtrend phase. Re-accumulation/Re-distribution = pauses within trends.'
+    },
+    orderflow: {
+      title: 'Order Flow Patterns',
+      content: 'Order flow detects institutional footprints. Big Trades = large volume spikes indicating institutional activity. CVD Divergence = price vs cumulative delta mismatch. Delta Imbalance = strong directional buying/selling pressure. Stop Hunt = price spikes to trigger stops then reverses.'
+    },
+    exit: {
+      title: 'Exit Reasons',
+      content: 'How trades were closed. TARGET = price hit profit target (best outcome). TIME_EXIT = closed after max holding period. STOP_LOSS = protective stop triggered (controlled loss). Each exit type has different win rate implications.'
+    }
+  };
+
   return (
-    <div style={styles.backtestDashboard}>
-      <div style={styles.dashboardHeader}>
-        <h2 style={styles.dashboardTitle}>Underground Setup - Backtest Analytics</h2>
-        <div style={styles.dateFilter}>
-          <input
-            type="date"
-            value={pendingDateRange.start}
-            onChange={(e) => setPendingDateRange({ ...pendingDateRange, start: e.target.value })}
-            style={styles.dateInput}
-          />
-          <span style={styles.dateSeparator}>to</span>
-          <input
-            type="date"
-            value={pendingDateRange.end}
-            onChange={(e) => setPendingDateRange({ ...pendingDateRange, end: e.target.value })}
-            style={styles.dateInput}
-          />
-          <button 
-            onClick={handleApplyFilter}
-            style={{
-              ...styles.filterButton,
-              background: 'linear-gradient(135deg, #00ff88 0%, #00cc66 100%)',
-              color: '#000',
-              fontWeight: 600,
-              border: 'none'
-            }}
-          >
-            Apply
-          </button>
-          <button 
-            style={styles.filterButton}
-            onClick={handleResetFilter}
-          >
-            Reset
-          </button>
-        </div>
-      </div>
-
-      <div style={styles.filterInfo}>
-        Showing {data.summary.total_trades} trades from {dateRange.start} to {dateRange.end}
-      </div>
-
-      <TradeStatistics data={data} />
-
-      {/* Two-column layout: Yearly/Weekly on left, Calendar on right */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 450px',
-        gap: 24,
-        alignItems: 'start'
-      }}>
-        {/* Left Column: Yearly + Weekly */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <YearDrillDown data={data} selectedYear={selectedYear} setSelectedYear={setSelectedYear} />
-          <WeekBreakdown weeks={data.weekly_pnl} year={selectedYear} />
-        </div>
-
-        {/* Right Column: Calendar */}
+    <div style={{ background: '#0a0a0f', minHeight: '100vh', padding: 16 }}>
+      {/* Compact Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 12 }}>
         <div>
+          <h1 style={{ fontSize: 20, fontWeight: 800, color: '#fff', margin: 0 }}>Horizon Backtest Analytics</h1>
+          <p style={{ fontSize: 11, color: '#666', margin: 0 }}>{metadata?.data_range?.start} to {metadata?.data_range?.end} | {trades?.length || 0} trades</p>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input type="date" value={pendingDateRange.start} onChange={(e) => setPendingDateRange({ ...pendingDateRange, start: e.target.value })}
+            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, padding: '6px 10px', color: '#fff', fontSize: 11 }} />
+          <span style={{ color: '#666', fontSize: 11 }}>to</span>
+          <input type="date" value={pendingDateRange.end} onChange={(e) => setPendingDateRange({ ...pendingDateRange, end: e.target.value })}
+            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, padding: '6px 10px', color: '#fff', fontSize: 11 }} />
+          <button onClick={handleApplyFilter} style={{ background: '#00ff88', border: 'none', borderRadius: 6, padding: '6px 12px', color: '#000', fontWeight: 600, cursor: 'pointer', fontSize: 11 }}>Apply</button>
+          <button onClick={handleResetFilter} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: 6, padding: '6px 12px', color: '#888', cursor: 'pointer', fontSize: 11 }}>Reset</button>
+        </div>
+      </div>
+
+      {/* Top Metrics Strip - All in one row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', gap: 8, marginBottom: 16 }}>
+        <MetricCard label="Trades" value={trades?.length || 0} color="#00ff88" />
+        <MetricCard label="Win Rate" value={`${((data.summary?.win_rate || 0) * 100).toFixed(1)}%`} color={(data.summary?.win_rate || 0) >= 0.5 ? '#00ff88' : '#ff4466'} sub={`${winners.length}W / ${losers.length}L`} />
+        <MetricCard label="Profit Factor" value={(data.summary?.profit_factor || 0).toFixed(2)} color={data.summary?.profit_factor >= 1.5 ? '#00ff88' : '#ffaa00'} />
+        <MetricCard label="Total P&L" value={`$${((data.summary?.total_pnl || 0) / 1000).toFixed(0)}K`} color={data.summary?.total_pnl >= 0 ? '#00ff88' : '#ff4466'} />
+        <MetricCard label="Max DD" value={`${maxDrawdown.toFixed(1)}%`} color={maxDrawdown > 20 ? '#ff4466' : '#ffaa00'} />
+        <MetricCard label="Avg Win" value={`$${(avgWin/1000).toFixed(1)}K`} color="#00ff88" />
+        <MetricCard label="Avg Loss" value={`$${(avgLoss/1000).toFixed(1)}K`} color="#ff4466" />
+        <MetricCard label="Avg R" value={`${(data.summary?.avg_r || 0).toFixed(2)}R`} color="#8b5cf6" />
+        <MetricCard label="Return" value={`${totalReturn.toFixed(1)}%`} color={totalReturn >= 0 ? '#00ff88' : '#ff4466'} />
+        <MetricCard label="Final Equity" value={`$${(finalEquity/1000).toFixed(0)}K`} color="#f97316" />
+      </div>
+
+      {/* Navigation Tabs */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+        {sections.map(s => (
+          <button key={s.id} onClick={() => setActiveSection(s.id)} style={{
+            background: activeSection === s.id ? '#00ff88' : 'rgba(255,255,255,0.05)',
+            border: 'none', borderRadius: 6, padding: '8px 16px',
+            color: activeSection === s.id ? '#000' : '#888', fontWeight: 600, cursor: 'pointer', fontSize: 11
+          }}>{s.icon} {s.label}</button>
+        ))}
+      </div>
+
+      {/* OVERVIEW SECTION */}
+      {activeSection === 'overview' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          {/* Interactive Equity Curve - Classy Thick Line */}
+          <div style={{ background: 'linear-gradient(180deg, rgba(0,20,10,0.8) 0%, rgba(0,0,0,0.95) 100%)', borderRadius: 16, padding: 20, border: '1px solid rgba(0,255,136,0.15)', boxShadow: '0 4px 24px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: '#fff', margin: 0, letterSpacing: 0.5 }}>Equity Curve</h3>
+              <div style={{ fontSize: 10, color: '#666' }}>{equityData.length} trades</div>
+            </div>
+            <div style={{ height: 220, position: 'relative' }} onMouseLeave={() => setHoveredEquityPoint(null)}>
+              {equityData.length > 0 ? (() => {
+                const maxEq = Math.max(...equityData.map(e => e.equity));
+                const minEq = Math.min(...equityData.map(e => e.equity));
+                const range = maxEq - minEq || 1;
+                const getY = (eq) => 200 - ((eq - minEq) / range) * 170;
+                const getX = (i) => 20 + (i / (equityData.length - 1)) * 560;
+                const linePath = equityData.map((e, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(e.equity)}`).join(' ');
+                const areaPath = `${linePath} L ${getX(equityData.length - 1)} 200 L 20 200 Z`;
+                return (
+                  <>
+                    <svg width="100%" height="100%" viewBox="0 0 600 220" preserveAspectRatio="xMidYMid meet">
+                      <defs>
+                        <linearGradient id="eqGradPremium" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#00ff88" stopOpacity="0.25" />
+                          <stop offset="50%" stopColor="#00cc66" stopOpacity="0.1" />
+                          <stop offset="100%" stopColor="#00ff88" stopOpacity="0" />
+                        </linearGradient>
+                        <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                          <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                          <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                        </filter>
+                        <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
+                          <stop offset="0%" stopColor="#00cc66" />
+                          <stop offset="50%" stopColor="#00ff88" />
+                          <stop offset="100%" stopColor="#00ffaa" />
+                        </linearGradient>
+                      </defs>
+                      {/* Grid lines */}
+                      {[0.25, 0.5, 0.75].map(p => (
+                        <line key={p} x1="20" y1={200 - p * 170} x2="580" y2={200 - p * 170} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
+                      ))}
+                      {/* Starting capital line */}
+                      <line x1="20" y1={getY(100000)} x2="580" y2={getY(100000)} stroke="rgba(255,255,255,0.2)" strokeWidth="1" strokeDasharray="4,4" />
+                      <text x="585" y={getY(100000) + 4} fontSize="8" fill="#666">$100K</text>
+                      {/* Area fill */}
+                      <path d={areaPath} fill="url(#eqGradPremium)" />
+                      {/* Main line - THICK and classy with glow */}
+                      <path d={linePath} fill="none" stroke="url(#lineGrad)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" filter="url(#glow)" />
+                      {/* Hover detection areas (invisible) */}
+                      {equityData.map((e, i) => (
+                        <rect key={i} x={getX(i) - 5} y={0} width={10} height={220} fill="transparent" style={{ cursor: 'crosshair' }}
+                          onMouseEnter={() => setHoveredEquityPoint(i)} />
+                      ))}
+                      {/* Hover indicator dot */}
+                      {hoveredEquityPoint !== null && (
+                        <>
+                          <line x1={getX(hoveredEquityPoint)} y1={0} x2={getX(hoveredEquityPoint)} y2={200} stroke="rgba(255,255,255,0.2)" strokeWidth="1" strokeDasharray="2,2" />
+                          <circle cx={getX(hoveredEquityPoint)} cy={getY(equityData[hoveredEquityPoint].equity)} r={8} fill="none" stroke="#00ff88" strokeWidth="2" />
+                          <circle cx={getX(hoveredEquityPoint)} cy={getY(equityData[hoveredEquityPoint].equity)} r={4} fill={equityData[hoveredEquityPoint].pnl >= 0 ? '#00ff88' : '#ff4466'} />
+                        </>
+                      )}
+                      {/* Y-axis labels */}
+                      <text x="5" y="15" fontSize="9" fill="#666">${(maxEq/1000).toFixed(0)}K</text>
+                      <text x="5" y="200" fontSize="9" fill="#666">${(minEq/1000).toFixed(0)}K</text>
+                    </svg>
+                    {/* Premium hover tooltip */}
+                    {hoveredEquityPoint !== null && equityData[hoveredEquityPoint] && (() => {
+                      const pt = equityData[hoveredEquityPoint];
+                      return (
+                        <div style={{ position: 'absolute', top: 10, right: 10, background: 'linear-gradient(135deg, rgba(0,30,20,0.98) 0%, rgba(0,0,0,0.98) 100%)', border: '1px solid rgba(0,255,136,0.3)', borderRadius: 12, padding: 14, fontSize: 11, minWidth: 180, backdropFilter: 'blur(10px)', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}>
+                          <div style={{ fontWeight: 700, color: '#00ff88', marginBottom: 8, fontSize: 12, borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: 8 }}>{pt.date}</div>
+                          <div style={{ display: 'grid', gap: 6 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#888' }}>Equity</span><span style={{ color: '#00ff88', fontWeight: 700 }}>${(pt.equity/1000).toFixed(1)}K</span></div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#888' }}>Trade P&L</span><span style={{ color: pt.pnl >= 0 ? '#00ff88' : '#ff4466', fontWeight: 600 }}>{pt.pnl >= 0 ? '+' : ''}${pt.pnl?.toFixed(0)}</span></div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#888' }}>Total Profit</span><span style={{ color: pt.totalProfit >= 0 ? '#00ff88' : '#ff4466', fontWeight: 700 }}>{pt.totalProfit >= 0 ? '+' : ''}${(pt.totalProfit/1000).toFixed(1)}K <span style={{ fontSize: 9, opacity: 0.7 }}>({pt.totalProfitPct >= 0 ? '+' : ''}{pt.totalProfitPct.toFixed(0)}%)</span></span></div>
+                            <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 6, marginTop: 2 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#888' }}>Peak</span><span style={{ color: '#fff' }}>${(pt.peak/1000).toFixed(1)}K</span></div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#888' }}>From Peak</span><span style={{ color: pt.fromPeak > 0 ? '#ff4466' : '#00ff88', fontWeight: 600 }}>{pt.fromPeak > 0 ? `-$${(pt.fromPeak/1000).toFixed(1)}K (${pt.drawdown.toFixed(1)}%)` : 'AT HIGH'}</span></div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#888' }}>Max DD</span><span style={{ color: pt.maxDrawdownSoFar > 10 ? '#ff4466' : '#ffaa00', fontWeight: 600 }}>{pt.maxDrawdownSoFar.toFixed(1)}%</span></div>
+                            </div>
+                            <div style={{ fontSize: 9, color: '#555', textAlign: 'right', marginTop: 2 }}>Trade #{hoveredEquityPoint + 1}</div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </>
+                );
+              })() : <div style={{ color: '#666', textAlign: 'center', paddingTop: 100 }}>No data</div>}
+            </div>
+          </div>
+
+          {/* Yearly Performance Grid */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#fff', margin: 0, marginBottom: 12 }}>Yearly Performance</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+              {(data.yearly_pnl || []).map(y => (
+                <div key={y.year} style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 8, padding: 10, textAlign: 'center', border: selectedYear === y.year ? '2px solid #00ff88' : '1px solid transparent', cursor: 'pointer' }} onClick={() => setSelectedYear(y.year)}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>{y.year}</div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: y.pnl >= 0 ? '#00ff88' : '#ff4466' }}>${(y.pnl/1000).toFixed(0)}K</div>
+                  <div style={{ fontSize: 9, color: '#666' }}>{y.trades} trades | {((y.win_rate || 0) * 100).toFixed(1)}%</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Win vs Loss Comparison */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#fff', margin: 0, marginBottom: 12 }}>Winners vs Losers</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ background: 'rgba(0,255,136,0.1)', borderRadius: 8, padding: 12, border: '1px solid rgba(0,255,136,0.3)' }}>
+                <div style={{ fontSize: 10, color: '#00ff88', marginBottom: 8 }}>WINNERS ({winners.length})</div>
+                <div style={{ fontSize: 9, color: '#888', display: 'grid', gap: 4 }}>
+                  <div>Avg P&L: <span style={{ color: '#00ff88', fontWeight: 600 }}>${avgWin.toFixed(0)}</span></div>
+                  <div>Best: <span style={{ color: '#00ff88' }}>${Math.max(...winners.map(t => t.pnl || 0)).toFixed(0)}</span></div>
+                  <div>Avg R: <span style={{ color: '#00ff88' }}>{(winners.reduce((s,t) => s + (t.r||0), 0) / winners.length).toFixed(2)}R</span></div>
+                </div>
+              </div>
+              <div style={{ background: 'rgba(255,68,102,0.1)', borderRadius: 8, padding: 12, border: '1px solid rgba(255,68,102,0.3)' }}>
+                <div style={{ fontSize: 10, color: '#ff4466', marginBottom: 8 }}>LOSERS ({losers.length})</div>
+                <div style={{ fontSize: 9, color: '#888', display: 'grid', gap: 4 }}>
+                  <div>Avg P&L: <span style={{ color: '#ff4466', fontWeight: 600 }}>-${avgLoss.toFixed(0)}</span></div>
+                  <div>Worst: <span style={{ color: '#ff4466' }}>${Math.min(...losers.map(t => t.pnl || 0)).toFixed(0)}</span></div>
+                  <div>Avg R: <span style={{ color: '#ff4466' }}>{(losers.reduce((s,t) => s + (t.r||0), 0) / losers.length).toFixed(2)}R</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Market Direction */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#fff', margin: 0, marginBottom: 12 }}>Market Direction (5Y)</h3>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+              <div style={{ flex: bullishDays, background: '#00ff88', height: 20, borderRadius: 4 }} />
+              <div style={{ flex: bearishDays, background: '#ff4466', height: 20, borderRadius: 4 }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10 }}>
+              <span style={{ color: '#00ff88' }}>{bullishDays} Bullish ({((bullishDays/totalDays)*100).toFixed(1)}%)</span>
+              <span style={{ color: '#ff4466' }}>{bearishDays} Bearish ({((bearishDays/totalDays)*100).toFixed(1)}%)</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DEEP ANALYTICS SECTION */}
+      {activeSection === 'analytics' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+          {/* TPO Profile Analysis */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#8b5cf6', margin: 0, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              TPO Profile Types
+              <InfoTooltip id="tpo" title={metricExplanations.tpo.title} content={metricExplanations.tpo.content} color="#8b5cf6" />
+            </h3>
+            {Object.entries(featureStatistics?.by_tpo_type || {}).sort((a,b) => b[1].total - a[1].total).map(([type, stats]) => (
+              <FeatureBar key={type} label={type} wins={stats.wins} total={stats.total} pnl={stats.pnl} color="#8b5cf6" />
+            ))}
+          </div>
+
+          {/* Volume Pattern Analysis */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#f97316', margin: 0, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              Volume Patterns
+              <InfoTooltip id="volume" title={metricExplanations.volume.title} content={metricExplanations.volume.content} color="#f97316" />
+            </h3>
+            {Object.entries(featureStatistics?.by_volume_pattern || {}).sort((a,b) => b[1].total - a[1].total).slice(0, 8).map(([type, stats]) => (
+              <FeatureBar key={type} label={type} wins={stats.wins} total={stats.total} pnl={stats.pnl} color="#f97316" />
+            ))}
+          </div>
+
+          {/* Wyckoff Phase Analysis */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#00bcd4', margin: 0, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              Wyckoff Phases
+              <InfoTooltip id="wyckoff" title={metricExplanations.wyckoff.title} content={metricExplanations.wyckoff.content} color="#00bcd4" />
+            </h3>
+            {Object.entries(featureStatistics?.by_wyckoff_phase || {}).sort((a,b) => b[1].total - a[1].total).map(([type, stats]) => (
+              <FeatureBar key={type} label={type} wins={stats.wins} total={stats.total} pnl={stats.pnl} color="#00bcd4" />
+            ))}
+          </div>
+
+          {/* Order Flow Patterns */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)', gridColumn: 'span 2' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#ff4466', margin: 0, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              Order Flow Patterns
+              <InfoTooltip id="orderflow" title={metricExplanations.orderflow.title} content={metricExplanations.orderflow.content} color="#ff4466" />
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 32px' }}>
+              {Object.entries(featureStatistics?.by_order_flow || {}).sort((a,b) => b[1].total - a[1].total).map(([type, stats]) => (
+                <FeatureBar key={type} label={type} wins={stats.wins} total={stats.total} pnl={stats.pnl} color="#ff4466" />
+              ))}
+            </div>
+          </div>
+
+          {/* Exit Reason Analysis - Shows % of total trades */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#00ff88', margin: 0, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              Exit Reasons
+              <InfoTooltip id="exit" title={metricExplanations.exit.title} content={metricExplanations.exit.content} color="#00ff88" />
+            </h3>
+            {(() => {
+              const exitStats = featureStatistics?.by_exit_reason || {};
+              const totalAllTrades = Object.values(exitStats).reduce((sum, s) => sum + s.total, 0);
+              return Object.entries(exitStats).sort((a,b) => b[1].total - a[1].total).map(([type, stats]) => {
+                const pctOfTotal = totalAllTrades > 0 ? (stats.total / totalAllTrades * 100).toFixed(0) : 0;
+                const formattedLabel = formatMetricName(type);
+                const barColor = type === 'TARGET' ? '#00ff88' : type === 'STOP_LOSS' ? '#ff4466' : '#f97316';
+                return (
+                  <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ width: 100, fontSize: 11, color: '#ccc' }}>{formattedLabel}</div>
+                    <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: 4, height: 18, position: 'relative', overflow: 'hidden', minWidth: 100 }}>
+                      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pctOfTotal}%`, background: barColor, borderRadius: 4 }} />
+                      <div style={{ position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)', fontSize: 10, fontWeight: 600, color: '#fff' }}>{pctOfTotal}%</div>
+                    </div>
+                    <div style={{ width: 45, fontSize: 10, color: '#888', textAlign: 'right' }}>{stats.total}</div>
+                    <div style={{ width: 70, fontSize: 10, color: stats.pnl >= 0 ? '#00ff88' : '#ff4466', textAlign: 'right', fontWeight: 600 }}>${(stats.pnl/1000).toFixed(1)}K</div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* FEATURE ANALYSIS SECTION */}
+      {activeSection === 'features' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          {/* TPO Distribution with Visual Tooltips */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#fff', margin: 0, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              TPO Type Distribution (All Sessions)
+              <InfoTooltip id="tpo_dist" title="TPO Distribution" content="Total count of each TPO profile type across all trading sessions. TPO (Time Price Opportunity) profiles show where price spent the most time." color="#8b5cf6" />
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+              {(() => {
+                const totalTpo = Object.values(distributions?.tpo_types || {}).reduce((a,b) => a+b, 0);
+                return Object.entries(distributions?.tpo_types || {}).sort((a,b) => b[1] - a[1]).map(([type, count]) => (
+                  <TpoCard key={type} type={type} count={count} total={totalTpo} setHoveredTpo={setHoveredTpo} />
+                ));
+              })()}
+            </div>
+          </div>
+
+          {/* Wyckoff Distribution */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#fff', margin: 0, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              Wyckoff Phase Distribution
+              <InfoTooltip id="wyckoff_dist" title="Wyckoff Distribution" content="Market cycle phases based on Wyckoff methodology. Shows institutional accumulation/distribution patterns." color="#00bcd4" />
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+              {(() => {
+                const totalWyckoff = Object.values(distributions?.wyckoff_phases || {}).reduce((a,b) => a+b, 0);
+                return Object.entries(distributions?.wyckoff_phases || {}).sort((a,b) => b[1] - a[1]).map(([phase, count]) => (
+                  <WyckoffCard key={phase} phase={phase} count={count} total={totalWyckoff} setHoveredWyckoff={setHoveredWyckoff} />
+                ));
+              })()}
+            </div>
+          </div>
+
+          {/* Best/Worst Setups */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#00ff88', margin: 0, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              Best Performing Setups
+              <InfoTooltip id="best_setups" title="Best Setups" content="TPO profile types with the highest win rates (minimum 5 trades). These patterns historically produced the most consistent winning trades. Consider prioritizing entries during these market structures." color="#00ff88" />
+            </h3>
+            {Object.entries(featureStatistics?.by_tpo_type || {}).filter(([,s]) => s.total >= 5).sort((a,b) => b[1].win_rate - a[1].win_rate).slice(0, 5).map(([type, stats]) => (
+              <div key={type} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 11 }}>
+                <span style={{ color: '#888' }}>{type}</span>
+                <span style={{ color: '#00ff88', fontWeight: 600 }}>{stats.win_rate}% WR | ${(stats.pnl/1000).toFixed(1)}K</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Worst Setups */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#ff4466', margin: 0, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              Worst Performing Setups
+              <InfoTooltip id="worst_setups" title="Worst Setups" content="TPO profile types with the lowest win rates (minimum 5 trades). These patterns historically produced more losing trades. Consider avoiding or using tighter stops when trading during these market structures." color="#ff4466" />
+            </h3>
+            {Object.entries(featureStatistics?.by_tpo_type || {}).filter(([,s]) => s.total >= 5).sort((a,b) => a[1].win_rate - b[1].win_rate).slice(0, 5).map(([type, stats]) => (
+              <div key={type} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 11 }}>
+                <span style={{ color: '#888' }}>{type}</span>
+                <span style={{ color: '#ff4466', fontWeight: 600 }}>{stats.win_rate}% WR | ${(stats.pnl/1000).toFixed(1)}K</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* PHASE DETECTION SECTION */}
+      {activeSection === 'phase' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          {/* Wyckoff Phase Detection Summary */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#00bcd4', margin: 0, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              Wyckoff Phase Detection
+              <InfoTooltip id="phase_detect" title="Phase Detection" content="Market phases identified using Wyckoff methodology across 5 years of historical data. Shows how price moves through accumulation, markup, distribution, and markdown cycles." color="#00bcd4" />
+            </h3>
+            {(() => {
+              const phases = distributions?.wyckoff_phases || {};
+              const totalPhases = Object.values(phases).reduce((a,b) => a+b, 0);
+              const phaseColors = {
+                accumulation: '#00ff88', markup: '#22c55e', distribution: '#ff4466', markdown: '#ef4444',
+                consolidation: '#f97316', trending: '#a855f7', re_accumulation: '#10b981', re_distribution: '#f43f5e', unknown: '#666'
+              };
+              return Object.entries(phases).sort((a,b) => b[1] - a[1]).map(([phase, count]) => {
+                const pct = totalPhases > 0 ? (count / totalPhases * 100).toFixed(1) : 0;
+                const color = phaseColors[phase] || '#888';
+                return (
+                  <div key={phase} style={{ marginBottom: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, color: '#ccc' }}>{formatMetricName(phase)}</span>
+                      <span style={{ fontSize: 11, color, fontWeight: 600 }}>{count} ({pct}%)</span>
+                    </div>
+                    <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+                      <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 4 }} />
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+
+          {/* Phase Performance Matrix */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#a855f7', margin: 0, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              Phase Performance Analysis
+              <InfoTooltip id="phase_perf" title="Phase Performance" content="Trading performance breakdown by Wyckoff phase. Shows win rate and P&L for each market phase to identify which phases are most profitable to trade." color="#a855f7" />
+            </h3>
+            {(() => {
+              const phaseStats = featureStatistics?.by_wyckoff_phase || {};
+              return Object.entries(phaseStats).sort((a,b) => b[1].pnl - a[1].pnl).map(([phase, stats]) => {
+                const wr = stats.win_rate || 0;
+                const color = wr >= 65 ? '#00ff88' : wr >= 50 ? '#f97316' : '#ff4466';
+                return (
+                  <div key={phase} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div style={{ width: 90, fontSize: 10, color: '#aaa' }}>{formatMetricName(phase)}</div>
+                    <div style={{ width: 50, fontSize: 10, color, fontWeight: 600 }}>{wr.toFixed(0)}% WR</div>
+                    <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: 4, height: 12, position: 'relative' }}>
+                      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${Math.min(100, wr)}%`, background: color, borderRadius: 4 }} />
+                    </div>
+                    <div style={{ width: 70, fontSize: 10, color: stats.pnl >= 0 ? '#00ff88' : '#ff4466', fontWeight: 600, textAlign: 'right' }}>
+                      ${(stats.pnl/1000).toFixed(1)}K
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+
+          {/* Order Flow Pattern Detection */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#ff4466', margin: 0, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              Order Flow Pattern Detection
+              <InfoTooltip id="orderflow_detect" title="Order Flow Detection" content="Detected order flow patterns: CVD divergences, VSA no-effort results, delta imbalances, and absorption patterns identified across historical sessions." color="#ff4466" />
+            </h3>
+            {(() => {
+              const ofStats = featureStatistics?.by_order_flow || {};
+              const totalOF = Object.values(ofStats).reduce((sum, s) => sum + s.total, 0);
+              const ofColors = {
+                cvd_bullish_divergence: '#00ff88', cvd_bearish_divergence: '#ff4466', vsa_no_effort_result: '#f97316',
+                delta_imbalance: '#a855f7', absorption: '#00bcd4', normal: '#666'
+              };
+              return Object.entries(ofStats).sort((a,b) => b[1].total - a[1].total).map(([pattern, stats]) => {
+                const pct = totalOF > 0 ? (stats.total / totalOF * 100).toFixed(1) : 0;
+                const color = ofColors[pattern] || '#888';
+                return (
+                  <div key={pattern} style={{ marginBottom: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontSize: 10, color: '#ccc' }}>{formatMetricName(pattern)}</span>
+                      <span style={{ fontSize: 10, color: '#888' }}>{stats.total} trades ({pct}%)</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+                        <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 4 }} />
+                      </div>
+                      <span style={{ fontSize: 9, color: stats.win_rate >= 60 ? '#00ff88' : '#f97316', fontWeight: 600, width: 45 }}>{stats.win_rate.toFixed(0)}% WR</span>
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+
+          {/* Volume Pattern Detection */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#f97316', margin: 0, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              Volume Pattern Detection
+              <InfoTooltip id="volume_detect" title="Volume Patterns" content="Volume patterns detected using VSA (Volume Spread Analysis): climax, exhaustion, absorption, no demand/supply signals across 1,257 trading sessions." color="#f97316" />
+            </h3>
+            {(() => {
+              const volPatterns = distributions?.volume_patterns || {};
+              const totalVol = Object.values(volPatterns).reduce((a,b) => a+b, 0);
+              const volColors = {
+                climax_bullish: '#00ff88', climax_bearish: '#ff4466', exhaustion: '#f97316', absorption: '#a855f7',
+                no_demand: '#ff6b6b', no_supply: '#22c55e', high_volume: '#00bcd4', low_volume: '#888', normal: '#666'
+              };
+              return Object.entries(volPatterns).sort((a,b) => b[1] - a[1]).map(([pattern, count]) => {
+                const pct = totalVol > 0 ? (count / totalVol * 100).toFixed(1) : 0;
+                const color = volColors[pattern] || '#888';
+                return (
+                  <div key={pattern} style={{ marginBottom: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                      <span style={{ fontSize: 10, color: '#ccc' }}>{formatMetricName(pattern)}</span>
+                      <span style={{ fontSize: 10, color, fontWeight: 600 }}>{count} ({pct}%)</span>
+                    </div>
+                    <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 3, height: 6, overflow: 'hidden' }}>
+                      <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 3 }} />
+                    </div>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+
+          {/* Historical GEX Regime Analysis */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)', gridColumn: 'span 2' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#22c55e', margin: 0, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              Historical GEX Regime Analysis (Simulated from Price Action)
+              <InfoTooltip id="gex_regime" title="GEX Regimes" content="GEX regime classification derived from historical price volatility and range patterns. High GEX (>$5B) correlates with mean-reverting conditions, Low GEX (<$1B) with trending/volatile markets." color="#22c55e" />
+            </h3>
+            {(() => {
+              // Simulate GEX regimes based on session volatility
+              const sessions = data?.daily_candles || [];
+              let highGex = 0, medGex = 0, lowGex = 0, negGex = 0;
+              sessions.forEach(s => {
+                const range = s.high - s.low;
+                const avgPrice = (s.high + s.low) / 2;
+                const volatility = avgPrice > 0 ? (range / avgPrice * 100) : 0;
+                // Classify based on volatility (inverse relationship with GEX)
+                if (volatility < 0.5) highGex++;
+                else if (volatility < 1.0) medGex++;
+                else if (volatility < 2.0) lowGex++;
+                else negGex++;
+              });
+              const total = highGex + medGex + lowGex + negGex || 1;
+              const regimes = [
+                { name: 'High GEX (>$5B)', count: highGex, pct: (highGex/total*100).toFixed(1), color: '#00ff88', desc: 'Mean-reverting, low volatility' },
+                { name: 'Medium GEX ($1-5B)', count: medGex, pct: (medGex/total*100).toFixed(1), color: '#f97316', desc: 'Normal conditions' },
+                { name: 'Low GEX (<$1B)', count: lowGex, pct: (lowGex/total*100).toFixed(1), color: '#ff4466', desc: 'Trending, higher volatility' },
+                { name: 'Negative GEX', count: negGex, pct: (negGex/total*100).toFixed(1), color: '#a855f7', desc: 'Extreme volatility, dealer short gamma' }
+              ];
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+                  {regimes.map(r => (
+                    <div key={r.name} style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 8, padding: 12, textAlign: 'center', borderTop: `3px solid ${r.color}` }}>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: r.color }}>{r.count}</div>
+                      <div style={{ fontSize: 10, color: '#888', marginBottom: 4 }}>{r.name}</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>{r.pct}%</div>
+                      <div style={{ fontSize: 8, color: '#666', marginTop: 4 }}>{r.desc}</div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* MATRIX ANALYSIS SECTION */}
+      {activeSection === 'matrix' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          {/* TPO-Wyckoff Correlation Matrix */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)', gridColumn: 'span 2' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#a855f7', margin: 0, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              TPO-Wyckoff Phase Correlation Matrix
+              <InfoTooltip id="tpo_wyckoff_matrix" title="Correlation Matrix" content="Heat map showing which TPO profile types occur during which Wyckoff phases. Helps identify market structure patterns and optimal entry conditions." color="#a855f7" />
+            </h3>
+            {(() => {
+              const tpoTypes = ['P-shape', 'b-shape', 'D-shape', 'B-shape', 'elongated_up', 'elongated_down', 'single_print'];
+              const wyckoffPhases = ['accumulation', 'markup', 'distribution', 'markdown', 'consolidation', 'trending', 're_accumulation', 're_distribution'];
+              // Build co-occurrence matrix from trades data
+              const matrix = {};
+              tpoTypes.forEach(t => { matrix[t] = {}; wyckoffPhases.forEach(w => { matrix[t][w] = 0; }); });
+              // Count occurrences from trades
+              (trades || []).forEach(trade => {
+                const tpo = trade.tpo_type || 'unknown';
+                const wyckoff = trade.wyckoff_phase || 'unknown';
+                if (matrix[tpo] && matrix[tpo][wyckoff] !== undefined) {
+                  matrix[tpo][wyckoff]++;
+                }
+              });
+              // Find max for color scaling
+              let maxCount = 1;
+              tpoTypes.forEach(t => wyckoffPhases.forEach(w => { if (matrix[t][w] > maxCount) maxCount = matrix[t][w]; }));
+              return (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ padding: 6, textAlign: 'left', color: '#888', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>TPO / Phase</th>
+                        {wyckoffPhases.map(w => (
+                          <th key={w} style={{ padding: 6, textAlign: 'center', color: '#00bcd4', borderBottom: '1px solid rgba(255,255,255,0.1)', fontSize: 8 }}>
+                            {formatMetricName(w).split(' ')[0]}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tpoTypes.map(tpo => (
+                        <tr key={tpo}>
+                          <td style={{ padding: 6, color: '#8b5cf6', fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{tpo}</td>
+                          {wyckoffPhases.map(w => {
+                            const count = matrix[tpo][w];
+                            const intensity = count / maxCount;
+                            const bg = count > 0 ? `rgba(168,85,247,${0.1 + intensity * 0.6})` : 'transparent';
+                            return (
+                              <td key={w} style={{ padding: 6, textAlign: 'center', background: bg, color: count > 0 ? '#fff' : '#333', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                {count > 0 ? count : '-'}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Win Rate Heatmap by TPO + Wyckoff */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)', gridColumn: 'span 2' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#00ff88', margin: 0, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              Win Rate Matrix (TPO + Wyckoff Combinations)
+              <InfoTooltip id="wr_matrix" title="Win Rate Matrix" content="Historical win rates for each TPO-Wyckoff combination. Green cells indicate high-probability setups (>65% WR), red cells indicate setups to avoid (<45% WR)." color="#00ff88" />
+            </h3>
+            {(() => {
+              const tpoTypes = ['P-shape', 'b-shape', 'D-shape', 'B-shape', 'elongated_up', 'elongated_down'];
+              const wyckoffPhases = ['accumulation', 'markup', 'distribution', 'markdown', 'consolidation', 'trending'];
+              // Build win rate matrix
+              const wrMatrix = {};
+              tpoTypes.forEach(t => { wrMatrix[t] = {}; wyckoffPhases.forEach(w => { wrMatrix[t][w] = { wins: 0, total: 0 }; }); });
+              (trades || []).forEach(trade => {
+                const tpo = trade.tpo_type || 'unknown';
+                const wyckoff = trade.wyckoff_phase || 'unknown';
+                if (wrMatrix[tpo] && wrMatrix[tpo][wyckoff]) {
+                  wrMatrix[tpo][wyckoff].total++;
+                  if (trade.pnl > 0) wrMatrix[tpo][wyckoff].wins++;
+                }
+              });
+              return (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ padding: 6, textAlign: 'left', color: '#888', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>TPO / Phase</th>
+                        {wyckoffPhases.map(w => (
+                          <th key={w} style={{ padding: 6, textAlign: 'center', color: '#00bcd4', borderBottom: '1px solid rgba(255,255,255,0.1)', fontSize: 8 }}>
+                            {formatMetricName(w).split(' ')[0]}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tpoTypes.map(tpo => (
+                        <tr key={tpo}>
+                          <td style={{ padding: 6, color: '#8b5cf6', fontWeight: 600, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>{tpo}</td>
+                          {wyckoffPhases.map(w => {
+                            const { wins, total } = wrMatrix[tpo][w];
+                            const wr = total > 0 ? (wins / total * 100).toFixed(0) : null;
+                            const color = wr === null ? '#333' : wr >= 65 ? '#00ff88' : wr >= 50 ? '#f97316' : '#ff4466';
+                            const bg = wr === null ? 'transparent' : wr >= 65 ? 'rgba(0,255,136,0.15)' : wr >= 50 ? 'rgba(249,115,22,0.1)' : 'rgba(255,68,102,0.15)';
+                            return (
+                              <td key={w} style={{ padding: 6, textAlign: 'center', background: bg, color, fontWeight: wr !== null ? 600 : 400, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                {wr !== null ? `${wr}%` : '-'}
+                                {total > 0 && <div style={{ fontSize: 7, color: '#666' }}>n={total}</div>}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+            <div style={{ marginTop: 12, display: 'flex', gap: 16, justifyContent: 'center', fontSize: 9 }}>
+              <span><span style={{ display: 'inline-block', width: 12, height: 12, background: 'rgba(0,255,136,0.3)', borderRadius: 2, marginRight: 4, verticalAlign: 'middle' }}></span> High WR (65%+)</span>
+              <span><span style={{ display: 'inline-block', width: 12, height: 12, background: 'rgba(249,115,22,0.3)', borderRadius: 2, marginRight: 4, verticalAlign: 'middle' }}></span> Medium WR (50-65%)</span>
+              <span><span style={{ display: 'inline-block', width: 12, height: 12, background: 'rgba(255,68,102,0.3)', borderRadius: 2, marginRight: 4, verticalAlign: 'middle' }}></span> Low WR (&lt;50%)</span>
+            </div>
+          </div>
+
+          {/* Order Flow + TPO Correlation */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#ff4466', margin: 0, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              Best Order Flow + TPO Combinations
+              <InfoTooltip id="of_tpo" title="Order Flow + TPO" content="Most profitable combinations of order flow signals with TPO profile types. These combinations showed the highest win rates in backtesting." color="#ff4466" />
+            </h3>
+            {(() => {
+              // Calculate best combinations
+              const combos = {};
+              (trades || []).forEach(trade => {
+                const key = `${trade.order_flow || 'normal'}|${trade.tpo_type || 'unknown'}`;
+                if (!combos[key]) combos[key] = { wins: 0, total: 0, pnl: 0 };
+                combos[key].total++;
+                combos[key].pnl += trade.pnl || 0;
+                if (trade.pnl > 0) combos[key].wins++;
+              });
+              return Object.entries(combos)
+                .filter(([, s]) => s.total >= 5)
+                .map(([key, s]) => ({ key, ...s, wr: (s.wins / s.total * 100) }))
+                .sort((a, b) => b.wr - a.wr)
+                .slice(0, 8)
+                .map(c => {
+                  const [of, tpo] = c.key.split('|');
+                  return (
+                    <div key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                      <div style={{ flex: 1, fontSize: 10, color: '#ccc' }}>
+                        <span style={{ color: '#ff4466' }}>{formatMetricName(of)}</span> + <span style={{ color: '#8b5cf6' }}>{tpo}</span>
+                      </div>
+                      <div style={{ fontSize: 10, color: c.wr >= 65 ? '#00ff88' : '#f97316', fontWeight: 600 }}>{c.wr.toFixed(0)}%</div>
+                      <div style={{ fontSize: 9, color: '#666' }}>n={c.total}</div>
+                    </div>
+                  );
+                });
+            })()}
+          </div>
+
+          {/* Volume Pattern + Wyckoff Correlation */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#f97316', margin: 0, marginBottom: 12, display: 'flex', alignItems: 'center' }}>
+              Best Volume + Wyckoff Combinations
+              <InfoTooltip id="vol_wyckoff" title="Volume + Wyckoff" content="Most profitable combinations of volume patterns with Wyckoff phases. Identifies which volume signals work best in specific market cycles." color="#f97316" />
+            </h3>
+            {(() => {
+              const combos = {};
+              (trades || []).forEach(trade => {
+                const key = `${trade.volume_pattern || 'normal'}|${trade.wyckoff_phase || 'unknown'}`;
+                if (!combos[key]) combos[key] = { wins: 0, total: 0, pnl: 0 };
+                combos[key].total++;
+                combos[key].pnl += trade.pnl || 0;
+                if (trade.pnl > 0) combos[key].wins++;
+              });
+              return Object.entries(combos)
+                .filter(([, s]) => s.total >= 5)
+                .map(([key, s]) => ({ key, ...s, wr: (s.wins / s.total * 100) }))
+                .sort((a, b) => b.wr - a.wr)
+                .slice(0, 8)
+                .map(c => {
+                  const [vol, wyckoff] = c.key.split('|');
+                  return (
+                    <div key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                      <div style={{ flex: 1, fontSize: 10, color: '#ccc' }}>
+                        <span style={{ color: '#f97316' }}>{formatMetricName(vol)}</span> + <span style={{ color: '#00bcd4' }}>{formatMetricName(wyckoff)}</span>
+                      </div>
+                      <div style={{ fontSize: 10, color: c.wr >= 65 ? '#00ff88' : '#f97316', fontWeight: 600 }}>{c.wr.toFixed(0)}%</div>
+                      <div style={{ fontSize: 9, color: '#666' }}>n={c.total}</div>
+                    </div>
+                  );
+                });
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* SEASONALITY SECTION */}
+      {activeSection === 'seasonality' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
+          {/* Monthly */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#fff', margin: 0, marginBottom: 12 }}>Monthly Seasonality</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8 }}>
+              {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map(m => {
+                const d = seasonality?.monthly?.[m] || { win_rate: 50, avg_return: 0 };
+                return (
+                  <div key={m} style={{ background: 'rgba(0,0,0,0.3)', borderRadius: 6, padding: 8, textAlign: 'center' }}>
+                    <div style={{ fontSize: 9, color: '#666' }}>{m.slice(0,3)}</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: d.avg_return >= 0 ? '#00ff88' : '#ff4466' }}>{d.win_rate}%</div>
+                    <div style={{ fontSize: 8, color: d.avg_return >= 0 ? '#00ff88' : '#ff4466' }}>{d.avg_return >= 0 ? '+' : ''}{d.avg_return.toFixed(2)}%</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Day of Week */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 12, padding: 16, border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 13, fontWeight: 700, color: '#fff', margin: 0, marginBottom: 12 }}>Day of Week</h3>
+            {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map(day => {
+              const d = seasonality?.day_of_week?.[day] || { win_rate: 50, avg_return: 0 };
+              return (
+                <div key={day} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <div style={{ width: 60, fontSize: 10, color: '#888' }}>{day.slice(0,3)}</div>
+                  <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', borderRadius: 4, height: 18, position: 'relative' }}>
+                    <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${d.win_rate}%`, background: d.avg_return >= 0 ? '#00ff88' : '#ff4466', borderRadius: 4 }} />
+                    <span style={{ position: 'absolute', left: 6, top: '50%', transform: 'translateY(-50%)', fontSize: 9, color: '#fff', fontWeight: 600 }}>{d.win_rate}%</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* TRADE LOG SECTION */}
+      {activeSection === 'trades' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
+          <TradeLog trades={trades} dateRange={dateRange} />
           <PnLCalendar trades={trades} />
         </div>
-      </div>
+      )}
+
+      {/* Fixed Cursor-Following Tooltip for Feature Bars */}
+      {hoveredFeature && (
+        <div style={{
+          position: 'fixed',
+          left: hoveredFeature.x + 15,
+          top: hoveredFeature.y + 15,
+          transform: hoveredFeature.x > window.innerWidth - 340 ? 'translateX(-100%)' : 'none',
+          background: 'linear-gradient(180deg, rgba(20,20,25,0.98) 0%, rgba(10,10,15,0.98) 100%)',
+          border: `1px solid ${hoveredFeature.color}44`,
+          borderRadius: 10,
+          padding: '12px 14px',
+          minWidth: 240,
+          maxWidth: 320,
+          boxShadow: `0 12px 32px rgba(0,0,0,0.8), 0 0 15px ${hoveredFeature.color}22`,
+          zIndex: 9999,
+          pointerEvents: 'none'
+        }}>
+          <div style={{ fontWeight: 700, color: hoveredFeature.color, marginBottom: 8, fontSize: 13 }}>{hoveredFeature.formattedLabel}</div>
+          <div style={{ fontSize: 11, color: '#aaa', lineHeight: 1.6 }}>{hoveredFeature.tooltip || `Win rate: ${hoveredFeature.wr}% across ${hoveredFeature.total} trades with ${hoveredFeature.pnl >= 0 ? 'profit' : 'loss'} of $${(hoveredFeature.pnl/1000).toFixed(1)}K`}</div>
+          <div style={{ marginTop: 10, padding: '6px 8px', background: 'rgba(255,255,255,0.05)', borderRadius: 6, fontSize: 10, display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#666' }}>Win Rate</span>
+            <span style={{ color: hoveredFeature.color, fontWeight: 700 }}>{hoveredFeature.wr}%</span>
+          </div>
+        </div>
+      )}
+
+      {/* Fixed Cursor-Following Tooltip for Info Icons */}
+      {hoveredInfo && (
+        <div style={{
+          position: 'fixed',
+          left: hoveredInfo.x + 15,
+          top: hoveredInfo.y + 15,
+          transform: hoveredInfo.x > window.innerWidth - 320 ? 'translateX(-100%)' : 'none',
+          background: 'linear-gradient(135deg, rgba(15,15,20,0.98) 0%, rgba(5,5,10,0.98) 100%)',
+          border: `1px solid ${hoveredInfo.color}40`,
+          borderRadius: 12,
+          padding: 16,
+          width: 280,
+          boxShadow: `0 8px 32px rgba(0,0,0,0.5), 0 0 20px ${hoveredInfo.color}20`,
+          zIndex: 9999,
+          pointerEvents: 'none'
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: hoveredInfo.color, marginBottom: 10, borderBottom: `1px solid ${hoveredInfo.color}30`, paddingBottom: 8 }}>{hoveredInfo.title}</div>
+          <div style={{ fontSize: 11, color: '#aaa', lineHeight: 1.6 }}>{hoveredInfo.content}</div>
+        </div>
+      )}
+
+      {/* Click-anywhere overlay to dismiss TPO/Wyckoff tooltips */}
+      {(hoveredTpo || hoveredWyckoff) && (
+        <div
+          onClick={() => { setHoveredTpo(null); setHoveredWyckoff(null); }}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 9998,
+            cursor: 'default'
+          }}
+        />
+      )}
+
+      {/* Fixed Cursor-Following Tooltip for TPO Cards - Right-click to show, Left-click to dismiss */}
+      {hoveredTpo && (
+        <div
+          onClick={() => setHoveredTpo(null)}
+          style={{
+            position: 'fixed',
+            left: hoveredTpo.x + 15,
+            top: hoveredTpo.y + 15,
+            transform: hoveredTpo.x > window.innerWidth - 280 ? 'translateX(-100%)' : 'none',
+            background: 'linear-gradient(180deg, rgba(20,15,30,0.98) 0%, rgba(10,8,20,0.98) 100%)',
+            border: '1px solid rgba(139,92,246,0.4)',
+            borderRadius: 14,
+            padding: 16,
+            minWidth: 240,
+            boxShadow: '0 12px 40px rgba(0,0,0,0.8), 0 0 20px rgba(139,92,246,0.2)',
+            zIndex: 9999,
+            cursor: 'pointer'
+          }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+            <div style={{ background: 'rgba(139,92,246,0.1)', borderRadius: 10, padding: 8, border: '1px solid rgba(139,92,246,0.2)' }}>{hoveredTpo.visual.svg}</div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#8b5cf6', marginBottom: 4 }}>{formatMetricName(hoveredTpo.type)}</div>
+              <div style={{ fontSize: 11, color: hoveredTpo.visual.color, fontWeight: 600, padding: '2px 8px', background: `${hoveredTpo.visual.color}22`, borderRadius: 4, display: 'inline-block' }}>{hoveredTpo.visual.signal}</div>
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: '#bbb', lineHeight: 1.6, marginBottom: 12 }}>{hoveredTpo.visual.desc}</div>
+          <div style={{ padding: '8px 10px', background: 'rgba(139,92,246,0.1)', borderRadius: 8, fontSize: 10, color: '#888', display: 'flex', justifyContent: 'space-between' }}>
+            <span>Occurrences</span>
+            <span><span style={{ color: '#8b5cf6', fontWeight: 700, fontSize: 12 }}>{hoveredTpo.count}</span> ({hoveredTpo.pct}%)</span>
+          </div>
+          <div style={{ fontSize: 9, color: '#555', textAlign: 'center', marginTop: 8 }}>Click anywhere to dismiss</div>
+        </div>
+      )}
+
+      {/* Fixed Cursor-Following Tooltip for Wyckoff Cards - Right-click to show, Left-click to dismiss */}
+      {hoveredWyckoff && (
+        <div
+          onClick={() => setHoveredWyckoff(null)}
+          style={{
+            position: 'fixed',
+            left: hoveredWyckoff.x + 15,
+            top: hoveredWyckoff.y + 15,
+            transform: hoveredWyckoff.x > window.innerWidth - 300 ? 'translateX(-100%)' : 'none',
+            background: 'linear-gradient(180deg, rgba(15,25,30,0.98) 0%, rgba(8,15,20,0.98) 100%)',
+            border: '1px solid rgba(0,188,212,0.4)',
+            borderRadius: 14,
+            padding: 16,
+            width: 260,
+            boxShadow: '0 12px 40px rgba(0,0,0,0.8), 0 0 20px rgba(0,188,212,0.2)',
+            zIndex: 9999,
+            cursor: 'pointer'
+          }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
+            <div style={{ background: 'rgba(0,188,212,0.1)', borderRadius: 10, padding: 8, border: '1px solid rgba(0,188,212,0.2)' }}>{hoveredWyckoff.visual.svg}</div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#00bcd4', marginBottom: 4, textTransform: 'capitalize' }}>{hoveredWyckoff.phase.replace(/_/g, ' ')}</div>
+              <div style={{ fontSize: 11, color: hoveredWyckoff.visual.color, fontWeight: 600, padding: '2px 8px', background: `${hoveredWyckoff.visual.color}22`, borderRadius: 4, display: 'inline-block' }}>{hoveredWyckoff.visual.signal}</div>
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: '#bbb', lineHeight: 1.6, marginBottom: 12 }}>{hoveredWyckoff.visual.desc}</div>
+          <div style={{ padding: '8px 10px', background: 'rgba(0,188,212,0.1)', borderRadius: 8, fontSize: 10, color: '#888', display: 'flex', justifyContent: 'space-between' }}>
+            <span>Occurrences</span>
+            <span><span style={{ color: '#00bcd4', fontWeight: 700, fontSize: 12 }}>{hoveredWyckoff.count}</span> ({hoveredWyckoff.pct}%)</span>
+          </div>
+          <div style={{ fontSize: 9, color: '#555', textAlign: 'center', marginTop: 8 }}>Click anywhere to dismiss</div>
+        </div>
+      )}
     </div>
   );
 };
@@ -21536,7 +23367,7 @@ const App = () => {
   const [user, setUser] = useLocalStorage('horizon_user', null);
   const [activeTab, setActiveTab] = useState('backtest');
   const [settings, setSettings] = useLocalStorage('horizon_settings', DEFAULT_SETTINGS);
-  const [dateRange, setDateRange] = useState({ start: '2025-08-20', end: '2025-12-28' });
+  const [dateRange, setDateRange] = useState({ start: '2021-01-01', end: '2026-12-31' });
   const [selectedContract, setSelectedContract] = useLocalStorage('horizon_contract', 'GCG26');
 
   // Sync contract to backend on page load (ensures backend matches frontend's saved contract)
@@ -21952,7 +23783,35 @@ const App = () => {
   };
 
   // Load real backtest data from JSON file
-  const { trades: realTrades, stats: realStats, source: dataSource } = useBacktestData();
+  const {
+    trades: realTrades,
+    stats: realStats,
+    source: dataSource,
+    metadata: backtestMetadata,
+    sessions: backtestSessions,
+    volumeProfiles: backtestVolumeProfiles,
+    bigVolumeDays: backtestBigVolumeDays,
+    supportResistance: backtestSupportResistance,
+    seasonality: backtestSeasonality,
+    dailyCandles: backtestDailyCandles,
+    hourlyCandles: backtestHourlyCandles,
+    featureStatistics: backtestFeatureStats,
+    distributions: backtestDistributions
+  } = useBacktestData();
+
+  // Extended data for backtest dashboard
+  const backtestExtendedData = useMemo(() => ({
+    metadata: backtestMetadata,
+    sessions: backtestSessions,
+    volumeProfiles: backtestVolumeProfiles,
+    bigVolumeDays: backtestBigVolumeDays,
+    supportResistance: backtestSupportResistance,
+    seasonality: backtestSeasonality,
+    dailyCandles: backtestDailyCandles,
+    hourlyCandles: backtestHourlyCandles,
+    featureStatistics: backtestFeatureStats,
+    distributions: backtestDistributions
+  }), [backtestMetadata, backtestSessions, backtestVolumeProfiles, backtestBigVolumeDays, backtestSupportResistance, backtestSeasonality, backtestDailyCandles, backtestHourlyCandles, backtestFeatureStats, backtestDistributions]);
 
   // Use real trades if available, otherwise generate mock
   const allTrades = useMemo(() => {
@@ -21977,22 +23836,22 @@ const App = () => {
     return allTrades.filter(t => {
       // Date filter
       if (t.date < dateRange.start || t.date > dateRange.end) return false;
-      
-      // Delta threshold filter - trades must have delta at or below threshold
-      if (t.delta > settings.deltaThreshold) return false;
-      
-      // Buying imbalance filter - winning trades should meet the threshold
-      if (t.pnl > 0 && t.buyingImbalance < settings.buyingImbalancePct) return false;
-      
-      // Grade filter (A, B, C)
-      if (settings.filters?.grades && !settings.filters.grades[t.grade]) return false;
-      
-      // Tier filter (1, 2, 3)
-      if (settings.filters?.tiers && !settings.filters.tiers[t.tier]) return false;
-      
+
+      // Delta threshold filter - trades must have delta at or below threshold (skip if no delta field)
+      if (t.delta !== undefined && t.delta > settings.deltaThreshold) return false;
+
+      // Buying imbalance filter - winning trades should meet the threshold (skip if no buyingImbalance field)
+      if (t.pnl > 0 && t.buyingImbalance !== undefined && t.buyingImbalance < settings.buyingImbalancePct) return false;
+
+      // Grade filter (A, B, C, F) - only filter out if explicitly set to false
+      if (settings.filters?.grades && t.grade && settings.filters.grades[t.grade] === false) return false;
+
+      // Tier filter (1, 2, 3) - only apply if trade has tier and filters are set
+      if (settings.filters?.tiers && t.tier && !settings.filters.tiers[t.tier]) return false;
+
       // Min R-Multiple filter
-      if (settings.filters?.minR !== undefined && t.r < settings.filters.minR) return false;
-      
+      if (settings.filters?.minR !== undefined && t.r !== undefined && t.r < settings.filters.minR) return false;
+
       return true;
     });
   }, [allTrades, dateRange, settings.deltaThreshold, settings.buyingImbalancePct, settings.filters]);
@@ -22040,11 +23899,12 @@ const App = () => {
 
           <main style={{ ...styles.main, padding: isMobile ? '12px' : '24px', paddingBottom: isMobile ? '85px' : '80px' }}>
             {activeTab === 'backtest' && (
-              <BacktestDashboard 
-                data={backtestData} 
+              <BacktestDashboard
+                data={backtestData}
                 trades={filteredTrades}
                 dateRange={dateRange}
                 setDateRange={setDateRange}
+                extendedData={backtestExtendedData}
               />
             )}
             {activeTab === 'live' && <LiveDashboard settings={settings} onSettingsChange={setSettings} />}

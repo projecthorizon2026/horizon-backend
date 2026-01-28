@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-PROJECT HORIZON - HTTP LIVE FEED v2
+PROJECT HORIZON - HTTP LIVE FEED v15.0.0
 All live data from Databento - no placeholders
 """
+APP_VERSION = "15.1.0"
 import os
 import json
 import threading
@@ -60,6 +61,9 @@ CONTRACT_CONFIG = {
     'GC': {
         'symbol': 'GC.FUT',
         'front_month': 'GCG26',
+        'front_month_name': 'Gold Feb 2026',
+        'next_month': 'GCJ26',
+        'next_month_name': 'Gold Apr 2026',
         'name': 'Gold Feb 2026',
         'ticker': 'GC1!',
         'price_min': 2000,
@@ -69,6 +73,9 @@ CONTRACT_CONFIG = {
     'NQ': {
         'symbol': 'NQ.FUT',
         'front_month': 'NQH26',
+        'front_month_name': 'Nasdaq Mar 2026',
+        'next_month': 'NQM26',
+        'next_month_name': 'Nasdaq Jun 2026',
         'name': 'Nasdaq Mar 2026',
         'ticker': 'NQ1!',
         'price_min': 10000,
@@ -143,14 +150,31 @@ state = {
     # Ended sessions OHLC (stored when session ends)
     'ended_sessions': {},  # {session_id: {open, high, low, close}}
     
-    # 4 IB Sessions - tracked independently
+    # 4 IB Sessions - tracked independently with VWAP
     'ibs': {
-        'japan': {'high': 0.0, 'low': 999999.0, 'status': 'WAITING', 'start': '19:00', 'end': '20:00', 'name': 'Japan IB'},
-        'london': {'high': 0.0, 'low': 999999.0, 'status': 'WAITING', 'start': '03:00', 'end': '04:00', 'name': 'London IB'},
-        'us': {'high': 0.0, 'low': 999999.0, 'status': 'WAITING', 'start': '08:20', 'end': '09:30', 'name': 'US IB'},
-        'ny': {'high': 0.0, 'low': 999999.0, 'status': 'WAITING', 'start': '09:30', 'end': '10:30', 'name': 'NY IB'},
+        'japan': {'high': 0.0, 'low': 999999.0, 'status': 'WAITING', 'start': '19:00', 'end': '20:00', 'name': 'Japan IB', 'vwap_num': 0.0, 'vwap_den': 0.0, 'vwap': 0.0},
+        'london': {'high': 0.0, 'low': 999999.0, 'status': 'WAITING', 'start': '03:00', 'end': '04:00', 'name': 'London IB', 'vwap_num': 0.0, 'vwap_den': 0.0, 'vwap': 0.0},
+        'us': {'high': 0.0, 'low': 999999.0, 'status': 'WAITING', 'start': '08:20', 'end': '09:30', 'name': 'US IB', 'vwap_num': 0.0, 'vwap_den': 0.0, 'vwap': 0.0},
+        'ny': {'high': 0.0, 'low': 999999.0, 'status': 'WAITING', 'start': '09:30', 'end': '10:30', 'name': 'NY IB', 'vwap_num': 0.0, 'vwap_den': 0.0, 'vwap': 0.0},
     },
     'current_ib': None,  # Which IB is currently active (japan, london, us, ny, or None)
+
+    # Anchored VWAPs - persist until 17:00 ET
+    'us_ib_vwap': 0.0,   # US IB (08:20) anchored VWAP
+    'ny_1h_vwap': 0.0,   # NY 1H (09:30) anchored VWAP
+    'us_ib_vwap_num': 0.0,
+    'us_ib_vwap_den': 0.0,
+    'ny_1h_vwap_num': 0.0,
+    'ny_1h_vwap_den': 0.0,
+
+    # Full Day VWAP (18:00 ET anchored)
+    'day_vwap': 0.0,
+    'day_vwap_num': 0.0,
+    'day_vwap_den': 0.0,
+
+    # Overnight levels (18:00 - 09:30 ET)
+    'overnight_high': 0.0,
+    'overnight_low': 999999.0,
 
     # Legacy single IB (for backwards compatibility)
     'ib_high': 0.0,
@@ -191,8 +215,26 @@ state = {
     
     # Latency
     'last_update': '',
-    'market_open': False
+    'market_open': False,
+
+    # Contract Rollover (Open Interest based)
+    'rollover': {
+        'front_month': '',
+        'front_month_name': '',
+        'front_month_oi': 0,
+        'next_month': '',
+        'next_month_name': '',
+        'next_month_oi': 0,
+        'oi_ratio': 0.0,  # next_oi / front_oi
+        'should_roll': False,
+        'roll_signal': 'HOLD',  # HOLD, CONSIDER, ROLL
+        'last_update': '',
+    }
 }
+
+# Rollover fetch control
+rollover_last_fetch = 0
+ROLLOVER_FETCH_INTERVAL = 300  # 5 minutes
 
 delta_history = deque(maxlen=36000)
 volume_history = deque(maxlen=36000)  # (timestamp, buy_vol, sell_vol)
@@ -932,6 +974,126 @@ def reset_tpo_for_new_day():
     print("🔄 TPO: Reset for new trading day")
 
 # ============================================
+# FETCH CONTRACT ROLLOVER (OPEN INTEREST) DATA
+# ============================================
+def fetch_rollover_data():
+    """Fetch Open Interest for front and next month contracts to determine rollover timing"""
+    global state, rollover_last_fetch, ACTIVE_CONTRACT
+
+    if not HAS_DATABENTO or not API_KEY:
+        print("⚠️  Cannot fetch rollover data - no Databento connection")
+        return
+
+    # Throttle fetches to avoid API rate limits
+    current_time = time.time()
+    if current_time - rollover_last_fetch < ROLLOVER_FETCH_INTERVAL:
+        return  # Skip if fetched recently
+
+    config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
+    front_month = config['front_month']
+    next_month = config['next_month']
+    front_month_name = config.get('front_month_name', config['name'])
+    next_month_name = config.get('next_month_name', '')
+
+    try:
+        print(f"📊 Fetching Open Interest for rollover: {front_month} vs {next_month}...")
+
+        client = db.Historical(key=API_KEY)
+        et_tz = pytz.timezone('America/New_York')
+        et_now = datetime.now(et_tz)
+
+        # Fetch last 2 days to ensure we get recent OI data
+        start_date = (et_now - timedelta(days=2)).strftime('%Y-%m-%d')
+        end_date = et_now.strftime('%Y-%m-%d')
+
+        front_oi = 0
+        next_oi = 0
+
+        # Fetch statistics for both contracts
+        # Using statistics schema which contains open_interest (stat_type=1)
+        try:
+            # Fetch for front month
+            front_data = client.timeseries.get_range(
+                dataset='GLBX.MDP3',
+                schema='statistics',
+                stype_in='raw_symbol',
+                symbols=[front_month],
+                start=start_date,
+                end=end_date
+            )
+
+            # Get the latest OI value
+            for record in front_data:
+                if hasattr(record, 'stat_type') and record.stat_type == 1:  # 1 = Open Interest
+                    if hasattr(record, 'quantity'):
+                        front_oi = record.quantity
+
+        except Exception as e:
+            print(f"   ⚠️ Front month OI fetch error: {str(e)[:50]}")
+
+        try:
+            # Fetch for next month
+            next_data = client.timeseries.get_range(
+                dataset='GLBX.MDP3',
+                schema='statistics',
+                stype_in='raw_symbol',
+                symbols=[next_month],
+                start=start_date,
+                end=end_date
+            )
+
+            # Get the latest OI value
+            for record in next_data:
+                if hasattr(record, 'stat_type') and record.stat_type == 1:  # 1 = Open Interest
+                    if hasattr(record, 'quantity'):
+                        next_oi = record.quantity
+
+        except Exception as e:
+            print(f"   ⚠️ Next month OI fetch error: {str(e)[:50]}")
+
+        # Calculate rollover metrics
+        oi_ratio = 0.0
+        should_roll = False
+        roll_signal = 'HOLD'
+
+        if front_oi > 0:
+            oi_ratio = next_oi / front_oi
+
+            # Rollover signals based on OI ratio
+            if oi_ratio >= 1.0:
+                should_roll = True
+                roll_signal = 'ROLL'
+            elif oi_ratio >= 0.75:
+                should_roll = False
+                roll_signal = 'CONSIDER'
+            else:
+                should_roll = False
+                roll_signal = 'HOLD'
+
+        # Update state
+        with lock:
+            state['rollover'] = {
+                'front_month': front_month,
+                'front_month_name': front_month_name,
+                'front_month_oi': front_oi,
+                'next_month': next_month,
+                'next_month_name': next_month_name,
+                'next_month_oi': next_oi,
+                'oi_ratio': round(oi_ratio, 3),
+                'should_roll': should_roll,
+                'roll_signal': roll_signal,
+                'last_update': get_et_now().strftime('%Y-%m-%d %H:%M:%S ET'),
+            }
+
+        rollover_last_fetch = current_time
+
+        print(f"   ✅ Rollover: {front_month} OI={front_oi:,} | {next_month} OI={next_oi:,} | Ratio={oi_ratio:.2f} | Signal={roll_signal}")
+
+    except Exception as e:
+        print(f"❌ Rollover fetch error: {e}")
+
+
+# ============================================
 # FETCH PREVIOUS DAY LEVELS FROM DATABENTO
 # ============================================
 def fetch_pd_levels():
@@ -1299,6 +1461,78 @@ def fetch_all_ibs():
                         tpo_state['sessions']['tpo3_us_am']['ib_complete'] = True
                         print(f"   📊 TPO RTH IB initialized: H=${ib_high:.2f}, L=${ib_low:.2f}")
 
+                        # Fetch A and B period data separately for AB Overlap calculation
+                        try:
+                            # A period: 09:30-10:00 ET = 14:30-15:00 UTC
+                            a_data = client.timeseries.get_range(
+                                dataset='GLBX.MDP3',
+                                symbols=[symbol],
+                                stype_in='parent',
+                                schema='trades',
+                                start=f"{today}T14:30:00Z",
+                                end=f"{today}T15:00:00Z"
+                            )
+                            a_records = list(a_data)
+                            if a_records:
+                                a_high, a_low = 0, float('inf')
+                                for r in a_records:
+                                    if front_month_instrument_id and r.instrument_id != front_month_instrument_id:
+                                        continue
+                                    p = r.price / 1e9 if r.price > 1e6 else r.price
+                                    if p < price_min or p > price_max:
+                                        continue
+                                    if p > a_high:
+                                        a_high = p
+                                    if p < a_low:
+                                        a_low = p
+                                if a_high > 0:
+                                    tpo_state['day']['a_high'] = a_high
+                                    tpo_state['day']['a_low'] = a_low
+                                    tpo_state['sessions']['tpo3_us_am']['a_high'] = a_high
+                                    tpo_state['sessions']['tpo3_us_am']['a_low'] = a_low
+                                    print(f"   📊 A period (09:30-10:00): H=${a_high:.2f}, L=${a_low:.2f}")
+
+                            # B period: 10:00-10:30 ET = 15:00-15:30 UTC
+                            b_data = client.timeseries.get_range(
+                                dataset='GLBX.MDP3',
+                                symbols=[symbol],
+                                stype_in='parent',
+                                schema='trades',
+                                start=f"{today}T15:00:00Z",
+                                end=f"{today}T15:30:00Z"
+                            )
+                            b_records = list(b_data)
+                            if b_records:
+                                b_high, b_low = 0, float('inf')
+                                for r in b_records:
+                                    if front_month_instrument_id and r.instrument_id != front_month_instrument_id:
+                                        continue
+                                    p = r.price / 1e9 if r.price > 1e6 else r.price
+                                    if p < price_min or p > price_max:
+                                        continue
+                                    if p > b_high:
+                                        b_high = p
+                                    if p < b_low:
+                                        b_low = p
+                                if b_high > 0:
+                                    tpo_state['day']['b_high'] = b_high
+                                    tpo_state['day']['b_low'] = b_low
+                                    tpo_state['sessions']['tpo3_us_am']['b_high'] = b_high
+                                    tpo_state['sessions']['tpo3_us_am']['b_low'] = b_low
+                                    print(f"   📊 B period (10:00-10:30): H=${b_high:.2f}, L=${b_low:.2f}")
+
+                            # Calculate AB Overlap if both periods have data
+                            if tpo_state['day'].get('a_high', 0) > 0 and tpo_state['day'].get('b_high', 0) > 0:
+                                ab_overlap = calculate_overlap(
+                                    (tpo_state['day']['a_high'], tpo_state['day']['a_low']),
+                                    (tpo_state['day']['b_high'], tpo_state['day']['b_low'])
+                                )
+                                tpo_state['day']['ab_overlap'] = ab_overlap
+                                tpo_state['sessions']['tpo3_us_am']['ab_overlap'] = ab_overlap
+                                print(f"   📊 AB Overlap: {ab_overlap:.1f}%")
+                        except Exception as ab_err:
+                            print(f"   ⚠️ Could not fetch A/B period data: {ab_err}")
+
                 print(f"   ✅ {ib_def['name']}: H=${ib_high:.2f}, L=${ib_low:.2f} (from {ib_data['count']} trades)", flush=True)
 
             except Exception as e:
@@ -1312,6 +1546,189 @@ def fetch_all_ibs():
 def fetch_todays_ib():
     """Wrapper for backwards compatibility - calls fetch_all_ibs"""
     fetch_all_ibs()
+
+
+def fetch_full_day_data():
+    """Fetch full day's trade data (18:00 ET to now) and calculate:
+    - True day_high and day_low
+    - Overnight high/low (18:00-09:30)
+    - Anchored VWAPs: us_ib_vwap (08:20+), ny_1h_vwap (09:30+), day_vwap (18:00+)
+    """
+    global state, front_month_instrument_id, lock
+
+    if not HAS_DATABENTO or not API_KEY:
+        print("⚠️  Databento not available for full day data")
+        return
+
+    try:
+        config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
+        symbol = config['symbol']
+        price_min = config['price_min']
+        price_max = config['price_max']
+
+        # Calculate trading day start (18:00 ET)
+        et_tz = pytz.timezone('America/New_York')
+        now_et = datetime.now(et_tz)
+        current_hour = now_et.hour
+
+        if current_hour >= 18:
+            # After 18:00, trading day started today
+            day_start_et = now_et.replace(hour=18, minute=0, second=0, microsecond=0)
+        else:
+            # Before 18:00, trading day started yesterday
+            day_start_et = (now_et - timedelta(days=1)).replace(hour=18, minute=0, second=0, microsecond=0)
+
+        # Convert to UTC
+        utc_start = (day_start_et + timedelta(hours=5)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        # Use current time minus 25 min buffer for data delay (Databento has ~20 min delay)
+        utc_end_time = now_et + timedelta(hours=5) - timedelta(minutes=25)
+        utc_end = utc_end_time.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+        print(f"📊 Fetching full day data (18:00 ET to now)...")
+        print(f"   Range: {utc_start} to {utc_end}")
+
+        client = db.Historical(key=API_KEY)
+        data = client.timeseries.get_range(
+            dataset='GLBX.MDP3',
+            symbols=[symbol],
+            stype_in='parent',
+            schema='trades',
+            start=utc_start,
+            end=utc_end
+        )
+
+        records = list(data)
+        print(f"   Got {len(records)} trades for full day")
+
+        if not records:
+            print("   ⚠️ No trades found for today")
+            return
+
+        # Initialize tracking variables
+        day_high = 0
+        day_low = float('inf')
+        day_open = 0
+        day_vwap_num = 0.0
+        day_vwap_den = 0.0
+
+        # Overnight: 18:00 - 08:20 ET (23:00 - 13:20 UTC)
+        overnight_high = 0
+        overnight_low = float('inf')
+
+        # US IB VWAP: 08:20+ ET (13:20+ UTC)
+        us_ib_vwap_num = 0.0
+        us_ib_vwap_den = 0.0
+
+        # NY 1H VWAP: 09:30+ ET (14:30+ UTC)
+        ny_1h_vwap_num = 0.0
+        ny_1h_vwap_den = 0.0
+
+        first_ts = float('inf')
+        first_price = 0
+
+        # Get current day in UTC for time comparisons
+        today = now_et.strftime('%Y-%m-%d')
+
+        # Calculate UTC times for boundaries
+        # 08:20 ET = 13:20 UTC
+        us_ib_start_utc = datetime.strptime(f"{today}T13:20:00Z", '%Y-%m-%dT%H:%M:%SZ')
+        # 09:30 ET = 14:30 UTC
+        ny_start_utc = datetime.strptime(f"{today}T14:30:00Z", '%Y-%m-%dT%H:%M:%SZ')
+
+        for r in records:
+            # Only use front month if known
+            if front_month_instrument_id and r.instrument_id != front_month_instrument_id:
+                continue
+
+            p = r.price / 1e9 if r.price > 1e6 else r.price
+            size = getattr(r, 'size', 1)
+            ts = r.ts_event
+
+            if p < price_min or p > price_max:
+                continue
+
+            # Track first trade for day open
+            if ts < first_ts:
+                first_ts = ts
+                first_price = p
+
+            # Day high/low
+            if p > day_high:
+                day_high = p
+            if p < day_low:
+                day_low = p
+
+            # Day VWAP (full day from 18:00 ET)
+            day_vwap_num += p * size
+            day_vwap_den += size
+
+            # Get trade time in UTC for VWAP calculations
+            trade_utc = datetime.utcfromtimestamp(ts / 1e9)
+            trade_hhmm_utc = trade_utc.hour * 100 + trade_utc.minute
+
+            # Overnight (18:00-08:20 ET = before 13:20 UTC on same day or after 23:00 UTC previous day)
+            if trade_hhmm_utc < 1320 or trade_hhmm_utc >= 2300:
+                if p > overnight_high:
+                    overnight_high = p
+                if p < overnight_low:
+                    overnight_low = p
+
+            # US IB VWAP (08:20+ ET = 13:20+ UTC)
+            if trade_hhmm_utc >= 1320:
+                us_ib_vwap_num += p * size
+                us_ib_vwap_den += size
+
+            # NY 1H VWAP (09:30+ ET = 14:30+ UTC)
+            if trade_hhmm_utc >= 1430:
+                ny_1h_vwap_num += p * size
+                ny_1h_vwap_den += size
+
+        # Calculate VWAPs
+        day_vwap = day_vwap_num / day_vwap_den if day_vwap_den > 0 else 0
+        us_ib_vwap = us_ib_vwap_num / us_ib_vwap_den if us_ib_vwap_den > 0 else 0
+        ny_1h_vwap = ny_1h_vwap_num / ny_1h_vwap_den if ny_1h_vwap_den > 0 else 0
+
+        # Update state with full day values
+        with lock:
+            state['day_high'] = day_high if day_high > 0 else state['day_high']
+            state['day_low'] = day_low if day_low < float('inf') else state['day_low']
+            if first_price > 0 and state['day_open'] == 0:
+                state['day_open'] = first_price
+
+            # Set day VWAP (this is the full day VWAP from 18:00 ET)
+            state['day_vwap'] = day_vwap
+            state['day_vwap_num'] = day_vwap_num
+            state['day_vwap_den'] = day_vwap_den
+
+            # Set overnight high/low
+            if overnight_high > 0:
+                state['overnight_high'] = overnight_high
+            if overnight_low < float('inf'):
+                state['overnight_low'] = overnight_low
+
+            # Set anchored VWAPs
+            if us_ib_vwap > 0:
+                state['us_ib_vwap'] = us_ib_vwap
+                state['us_ib_vwap_num'] = us_ib_vwap_num
+                state['us_ib_vwap_den'] = us_ib_vwap_den
+            if ny_1h_vwap > 0:
+                state['ny_1h_vwap'] = ny_1h_vwap
+                state['ny_1h_vwap_num'] = ny_1h_vwap_num
+                state['ny_1h_vwap_den'] = ny_1h_vwap_den
+
+        print(f"   ✅ Day: O=${first_price:.2f}, H=${day_high:.2f}, L=${day_low:.2f}")
+        print(f"   ✅ Day VWAP: ${day_vwap:.2f}")
+        if overnight_high > 0:
+            print(f"   ✅ Overnight: H=${overnight_high:.2f}, L=${overnight_low:.2f}")
+        if us_ib_vwap > 0:
+            print(f"   ✅ US IB VWAP (08:20+): ${us_ib_vwap:.2f}")
+        if ny_1h_vwap > 0:
+            print(f"   ✅ NY 1H VWAP (09:30+): ${ny_1h_vwap:.2f}")
+
+    except Exception as e:
+        print(f"❌ Error fetching full day data: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def fetch_todays_tpo_data():
@@ -1455,12 +1872,18 @@ def fetch_todays_tpo_data():
 
                     # Track A/B period ranges for US AM session (Open Type detection)
                     if session_key == 'tpo3_us_am':
-                        if session_period_idx == 0:  # A period (09:30-10:00)
+                        # Calculate IB period index relative to RTH IB start (09:30), not session start (08:20)
+                        ib_start_mins = 9 * 60 + 30  # 09:30 = 570 mins from midnight
+                        trade_time_mins = (trade_hhmm // 100) * 60 + (trade_hhmm % 100)
+                        ib_mins_elapsed = trade_time_mins - ib_start_mins
+                        ib_period_idx = ib_mins_elapsed // 30 if ib_mins_elapsed >= 0 else -1
+
+                        if ib_period_idx == 0:  # A period (09:30-10:00)
                             if price > session_data.get('a_high', 0):
                                 session_data['a_high'] = price
                             if price < session_data.get('a_low', 999999):
                                 session_data['a_low'] = price
-                        elif session_period_idx == 1:  # B period (10:00-10:30)
+                        elif ib_period_idx == 1:  # B period (10:00-10:30)
                             if price > session_data.get('b_high', 0):
                                 session_data['b_high'] = price
                             if price < session_data.get('b_low', 999999):
@@ -1468,21 +1891,21 @@ def fetch_todays_tpo_data():
 
                         # Also copy to day profile for RTH
                         day = tpo_state['day']
-                        if day.get('rth_open', 0) == 0:
+                        if day.get('rth_open', 0) == 0 and ib_period_idx >= 0:
                             day['rth_open'] = price
-                        if session_period_idx == 0:
+                        if ib_period_idx == 0:
                             if price > day.get('a_high', 0):
                                 day['a_high'] = price
                             if price < day.get('a_low', 999999):
                                 day['a_low'] = price
-                        elif session_period_idx == 1:
+                        elif ib_period_idx == 1:
                             if price > day.get('b_high', 0):
                                 day['b_high'] = price
                             if price < day.get('b_low', 999999):
                                 day['b_low'] = price
 
-                        # Track IB (first 2 periods = first hour)
-                        if session_period_idx < 2:
+                        # Track IB (first 2 periods = first hour from 09:30)
+                        if ib_period_idx >= 0 and ib_period_idx < 2:
                             if price > day.get('ib_high', 0):
                                 day['ib_high'] = price
                             if price < day.get('ib_low', 999999):
@@ -1539,6 +1962,7 @@ def fetch_ended_sessions_ohlc():
     price_max = config['price_max']
 
     # Session definitions with ET start/end times
+    # CME Globex Gold futures: 18:00 ET Sunday to 17:00 ET Friday
     session_times = {
         'pre_asia': ('18:00', '19:00'),
         'japan_ib': ('19:00', '20:00'),
@@ -3440,10 +3864,12 @@ def start_stream():
     print(f"\n📊 Fetching historical data for {config['name']}...")
     fetch_pd_levels()
     fetch_todays_ib()
+    fetch_full_day_data()  # Fetch full day for day_high/low, VWAPs, overnight
     fetch_ended_sessions_ohlc()  # Fetch OHLC for all ended sessions today
     fetch_todays_tpo_data()  # Load full day TPO data for all periods (A-Z)
     fetch_current_session_history()
     fetch_historical_candle_volumes()
+    fetch_rollover_data()  # Fetch Open Interest for contract rollover indicator
 
     # Load cached data from files first (instant startup)
     print("⚡ Loading cached data from files...")
@@ -3466,6 +3892,17 @@ def start_stream():
 
     prefetch_thread = threading.Thread(target=prefetch_session_history, daemon=True)
     prefetch_thread.start()
+
+    # Periodic rollover data refresh (Open Interest updates typically at settlement)
+    def periodic_rollover_fetch():
+        global stream_running
+        while stream_running:
+            time.sleep(300)  # Check every 5 minutes
+            if stream_running:
+                fetch_rollover_data()
+
+    rollover_thread = threading.Thread(target=periodic_rollover_fetch, daemon=True)
+    rollover_thread.start()
 
     # Re-check if we should still be running (might have been stopped during historical fetch)
     # Also re-read the active contract in case it changed during historical fetch
@@ -3852,7 +4289,25 @@ def process_trade(record):
             state['vwap_denominator'] += size
             if state['vwap_denominator'] > 0:
                 state['vwap'] = state['vwap_numerator'] / state['vwap_denominator']
-            
+
+            # Anchored VWAPs - US IB (08:20) and NY 1H (09:30) - persist until 17:00 ET
+            et_now = get_et_now()
+            current_hhmm = et_now.hour * 100 + et_now.minute
+
+            # US IB VWAP: Anchor at 08:20, accumulate until 17:00
+            if current_hhmm >= 820 and current_hhmm < 1700:
+                state['us_ib_vwap_num'] += price * size
+                state['us_ib_vwap_den'] += size
+                if state['us_ib_vwap_den'] > 0:
+                    state['us_ib_vwap'] = state['us_ib_vwap_num'] / state['us_ib_vwap_den']
+
+            # NY 1H VWAP: Anchor at 09:30, accumulate until 17:00
+            if current_hhmm >= 930 and current_hhmm < 1700:
+                state['ny_1h_vwap_num'] += price * size
+                state['ny_1h_vwap_den'] += size
+                if state['ny_1h_vwap_den'] > 0:
+                    state['ny_1h_vwap'] = state['ny_1h_vwap_num'] / state['ny_1h_vwap_den']
+
             # Buying imbalance
             if state['sell_volume'] > 0:
                 state['buying_imbalance_pct'] = int((state['buy_volume'] / state['sell_volume']) * 100)
@@ -4021,19 +4476,26 @@ def process_trade(record):
                 if price < session_data.get('low', 999999):
                     session_data['low'] = price
 
-            # Update period ranges for A, B, C (day level - for RTH open type detection)
-            day_period_idx = day['period_count']
-            if day_period_idx == 0:  # A period
+            # Update period ranges for A, B, C (relative to RTH IB start 09:30, not day start)
+            # Calculate IB period index relative to RTH IB start (09:30)
+            et_now = get_et_now()
+            current_hhmm = et_now.hour * 100 + et_now.minute
+            ib_start_mins = 9 * 60 + 30  # 09:30 = 570 mins from midnight
+            current_mins = (current_hhmm // 100) * 60 + (current_hhmm % 100)
+            ib_mins_elapsed = current_mins - ib_start_mins
+            ib_period_idx = ib_mins_elapsed // 30 if ib_mins_elapsed >= 0 else -1
+
+            if ib_period_idx == 0:  # A period (09:30-10:00)
                 if price > day['a_high']:
                     day['a_high'] = price
                 if price < day['a_low']:
                     day['a_low'] = price
-            elif day_period_idx == 1:  # B period
+            elif ib_period_idx == 1:  # B period (10:00-10:30)
                 if price > day['b_high']:
                     day['b_high'] = price
                 if price < day['b_low']:
                     day['b_low'] = price
-            elif day_period_idx == 2:  # C period
+            elif ib_period_idx == 2:  # C period (10:30-11:00)
                 if price > day['c_high']:
                     day['c_high'] = price
                 if price < day['c_low']:
@@ -4041,33 +4503,31 @@ def process_trade(record):
 
             # Update session-specific A/B tracking for RTH open type
             if current_tpo_session == 'tpo3_us_am' and session_data:
-                session_period_idx = session_data['period_count']
-                if session_period_idx == 0:  # A period
+                if ib_period_idx == 0:  # A period (09:30-10:00)
                     if price > session_data['a_high']:
                         session_data['a_high'] = price
                     if price < session_data['a_low']:
                         session_data['a_low'] = price
-                elif session_period_idx == 1:  # B period
+                elif ib_period_idx == 1:  # B period (10:00-10:30)
                     if price > session_data['b_high']:
                         session_data['b_high'] = price
                     if price < session_data['b_low']:
                         session_data['b_low'] = price
                 # AB overlap for RTH session
-                if session_period_idx >= 1:
+                if ib_period_idx >= 1:
                     session_data['ab_overlap'] = calculate_overlap(
                         (session_data['a_high'], session_data['a_low']),
                         (session_data['b_high'], session_data['b_low'])
                     )
 
-            # Update DAY IB during RTH session (09:30-10:30 = first 2 periods of tpo3_us_am)
+            # Update DAY IB during RTH session (09:30-10:30 = first 2 periods from 09:30)
             if current_tpo_session == 'tpo3_us_am' and session_data:
-                session_period_idx = session_data['period_count']
-                if session_period_idx < 2:  # During IB formation
+                if ib_period_idx >= 0 and ib_period_idx < 2:  # During IB formation (09:30-10:30)
                     if price > day['ib_high']:
                         day['ib_high'] = price
                     if price < day['ib_low']:
                         day['ib_low'] = price
-                elif session_period_idx == 2 and not day['ib_complete']:
+                elif ib_period_idx == 2 and not day['ib_complete']:
                     day['ib_complete'] = True
                     ib_range = day['ib_high'] - day['ib_low']
                     print(f"📊 TPO: RTH IB Complete: H={day['ib_high']:.2f} L={day['ib_low']:.2f} Range={ib_range:.2f}")
@@ -4428,6 +4888,7 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             ib_mid = (ib_high + ib_low) / 2 if ib_high > 0 and ib_low > 0 else 0
             
             response = {
+                'version': APP_VERSION,
                 'ticker': state['ticker'],
                 'contract': state['contract'],
                 'contract_name': state['contract_name'],
@@ -4480,11 +4941,19 @@ class LiveDataHandler(BaseHTTPRequestHandler):
                 'day_open': state['day_open'] if state['day_open'] > 0 else 0,
                 'day_high': state['day_high'] if state['day_high'] > 0 else 0,
                 'day_low': state['day_low'] if state['day_low'] < 999999 else 0,
+                'day_vwap': state['day_vwap'] if state['day_vwap'] > 0 else 0,
+
+                # Overnight (18:00 - 9:30 ET) from full day fetch
+                'overnight_high': state['overnight_high'] if state['overnight_high'] > 0 else 0,
+                'overnight_low': state['overnight_low'] if state['overnight_low'] < 999999 else 0,
 
                 # Ended sessions OHLC
                 'ended_sessions': state['ended_sessions'],
 
                 'vwap': state['vwap'],
+                # Anchored VWAPs (persist until 17:00 ET)
+                'us_ib_vwap': state['us_ib_vwap'] if state['us_ib_vwap'] > 0 else 0,
+                'ny_1h_vwap': state['ny_1h_vwap'] if state['ny_1h_vwap'] > 0 else 0,
                 'current_session_id': state['current_session_id'],
                 'current_session_name': state['current_session_name'],
                 'current_session_start': state['current_session_start'],
@@ -4524,9 +4993,17 @@ class LiveDataHandler(BaseHTTPRequestHandler):
                 'zero_gamma': state.get('zero_gamma', 0),
                 'hvl': state.get('hvl', 0),
                 'beta_spx': state.get('beta_spx', 0),
-                'beta_dxy': state.get('beta_dxy', 0)
+                'beta_dxy': state.get('beta_dxy', 0),
+
+                # TPO/Market Profile Data - POC, VAH, VAL (from tpo_state)
+                'tpo_poc': tpo_state['day'].get('poc', 0),
+                'tpo_vah': tpo_state['day'].get('vah', 0),
+                'tpo_val': tpo_state['day'].get('val', 0),
+
+                # Contract Rollover Indicator (Open Interest based)
+                'rollover': state.get('rollover', {})
             }
-        
+
         self.wfile.write(json.dumps(response).encode())
     
     def do_OPTIONS(self):
@@ -4883,7 +5360,7 @@ def start_http_server():
 # ============================================
 def main():
     print("=" * 60)
-    print("  PROJECT HORIZON - LIVE FEED v2 (All Live Data)")
+    print(f"  PROJECT HORIZON - LIVE FEED v{APP_VERSION}")
     print("=" * 60)
     print(f"📡 HTTP: http://localhost:{PORT}")
     print(f"🔑 API: {API_KEY[:10]}..." if API_KEY else "🔑 API: NOT SET")
