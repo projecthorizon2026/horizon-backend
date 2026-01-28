@@ -1032,52 +1032,64 @@ def fetch_rollover_data():
         front_oi = 0
         next_oi = 0
 
-        # Try definition schema first (most reliable for OI), fallback to statistics
+        # Use daily OHLCV to get volume (correlates with OI during rollover)
+        # Volume is a reliable proxy when OI data isn't available
         try:
-            # Fetch definitions for front month - contains open_interest field
+            # Fetch daily bars for front month
             front_data = client.timeseries.get_range(
                 dataset='GLBX.MDP3',
-                schema='definition',
+                schema='ohlcv-1d',
                 stype_in='raw_symbol',
                 symbols=[front_month],
                 start=start_date,
                 end=end_date
             )
 
-            # Get the latest OI value from definition records
+            # Get cumulative volume as proxy for activity/OI
+            total_volume = 0
             for record in front_data:
+                if hasattr(record, 'volume') and record.volume > 0:
+                    total_volume += record.volume
+                # Also check for open_interest if available
                 if hasattr(record, 'open_interest') and record.open_interest > 0:
                     front_oi = record.open_interest
-                elif hasattr(record, 'oi') and record.oi > 0:
-                    front_oi = record.oi
 
-            print(f"   📈 {front_month}: OI={front_oi:,} (from definition)")
+            # Use volume as OI proxy if no OI found
+            if front_oi == 0 and total_volume > 0:
+                front_oi = total_volume
+
+            print(f"   📈 {front_month}: Vol/OI={front_oi:,}")
 
         except Exception as e:
-            print(f"   ⚠️ Front month OI fetch error: {str(e)[:80]}")
+            print(f"   ⚠️ Front month fetch error: {str(e)[:80]}")
 
         try:
-            # Fetch definitions for next month - contains open_interest field
+            # Fetch daily bars for next month
             next_data = client.timeseries.get_range(
                 dataset='GLBX.MDP3',
-                schema='definition',
+                schema='ohlcv-1d',
                 stype_in='raw_symbol',
                 symbols=[next_month],
                 start=start_date,
                 end=end_date
             )
 
-            # Get the latest OI value from definition records
+            # Get cumulative volume as proxy for activity/OI
+            total_volume = 0
             for record in next_data:
+                if hasattr(record, 'volume') and record.volume > 0:
+                    total_volume += record.volume
                 if hasattr(record, 'open_interest') and record.open_interest > 0:
                     next_oi = record.open_interest
-                elif hasattr(record, 'oi') and record.oi > 0:
-                    next_oi = record.oi
 
-            print(f"   📈 {next_month}: OI={next_oi:,} (from definition)")
+            # Use volume as OI proxy if no OI found
+            if next_oi == 0 and total_volume > 0:
+                next_oi = total_volume
+
+            print(f"   📈 {next_month}: Vol/OI={next_oi:,}")
 
         except Exception as e:
-            print(f"   ⚠️ Next month OI fetch error: {str(e)[:80]}")
+            print(f"   ⚠️ Next month fetch error: {str(e)[:80]}")
 
         # Calculate rollover metrics
         oi_ratio = 0.0
