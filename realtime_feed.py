@@ -1046,8 +1046,9 @@ def fetch_rollover_data():
             )
 
             # Get the latest OI value - check both 'quantity' and 'value' attributes
+            # CME stat_type: 1=Open, 2=High, 3=Low, 4=Close, 5=Settlement, 6=OpenInterest
             for record in front_data:
-                if hasattr(record, 'stat_type') and record.stat_type == 1:  # 1 = Open Interest
+                if hasattr(record, 'stat_type') and record.stat_type == 6:  # 6 = Open Interest
                     if hasattr(record, 'quantity') and record.quantity > 0:
                         front_oi = record.quantity
                     elif hasattr(record, 'value') and record.value > 0:
@@ -1067,9 +1068,9 @@ def fetch_rollover_data():
                 end=end_date
             )
 
-            # Get the latest OI value - check both 'quantity' and 'value' attributes
+            # Get the latest OI value - stat_type 6 = Open Interest
             for record in next_data:
-                if hasattr(record, 'stat_type') and record.stat_type == 1:  # 1 = Open Interest
+                if hasattr(record, 'stat_type') and record.stat_type == 6:  # 6 = Open Interest
                     if hasattr(record, 'quantity') and record.quantity > 0:
                         next_oi = record.quantity
                     elif hasattr(record, 'value') and record.value > 0:
