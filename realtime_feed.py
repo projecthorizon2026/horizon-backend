@@ -5032,12 +5032,14 @@ class LiveDataHandler(BaseHTTPRequestHandler):
         if path == '/red-folder' or path == '/redfolder':
             # Check scheduled Fed events
             from datetime import datetime, timedelta
-            now = datetime.now()
+            now = datetime.utcnow()  # Server uses UTC
 
-            # High impact event: Powell speaking Jan 29, 2026
+            # High impact events in UTC (ET + 5 hours)
+            # Powell speaking Jan 29, 2026 - using wide window to catch event
             FED_EVENTS = [
-                (2026, 1, 29, 13, 0, "Fed Chair Powell Speaks", "CRITICAL"),
-                (2026, 1, 28, 14, 30, "FOMC Press Conference", "CRITICAL"),
+                (2026, 1, 29, 18, 0, "Fed Chair Powell Speaks", "CRITICAL"),  # 1 PM ET = 6 PM UTC
+                (2026, 1, 29, 19, 0, "Fed Chair Powell Speaks", "CRITICAL"),  # 2 PM ET = 7 PM UTC
+                (2026, 1, 28, 19, 30, "FOMC Press Conference", "CRITICAL"),   # 2:30 PM ET = 7:30 PM UTC
             ]
 
             scheduler_data = {'active': False, 'event_active': False}
