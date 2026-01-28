@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
-PROJECT HORIZON - HTTP LIVE FEED v15.1.0
+PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
+Memory optimized
 """
-APP_VERSION = "15.2.0"
+APP_VERSION = "15.3.0"
 
-# Suppress deprecation warnings (utcfromtimestamp) to avoid log flooding
+# Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
-warnings.filterwarnings('ignore', category=DeprecationWarning, message='.*utcfromtimestamp.*')
+warnings.filterwarnings('ignore', category=DeprecationWarning)
+warnings.filterwarnings('ignore', category=FutureWarning)
 
 import os
 import json
@@ -243,9 +245,9 @@ state = {
 rollover_last_fetch = 0
 ROLLOVER_FETCH_INTERVAL = 300  # 5 minutes
 
-delta_history = deque(maxlen=36000)
-volume_history = deque(maxlen=36000)  # (timestamp, buy_vol, sell_vol)
-price_history = deque(maxlen=1000)
+delta_history = deque(maxlen=10000)  # Reduced from 36000 to save memory
+volume_history = deque(maxlen=10000)  # Reduced from 36000 to save memory
+price_history = deque(maxlen=500)  # Reduced from 1000
 last_session_id = None
 front_month_instrument_id = None  # Will be set from historical data
 
