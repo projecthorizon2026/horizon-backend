@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.5.8"
+APP_VERSION = "15.5.9"
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -256,9 +256,7 @@ active_month_instrument_id = None  # Will be resolved for GCJ26 specifically
 def resolve_active_month_instrument_id():
     """Resolve the instrument_id for the active_month contract (e.g., GCJ26)
 
-    Strategy: GCJ26 (Apr) trades consistently ~$30-50 higher than GCG26 (Feb).
-    We find pairs of instruments and select the one with higher average price.
-    If only one instrument found, we check if prices are in the expected GCJ26 range.
+    Uses DataFrame conversion to get symbol names from Databento metadata.
     """
     global active_month_instrument_id, front_month_instrument_id
 
@@ -269,18 +267,17 @@ def resolve_active_month_instrument_id():
     config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
     active_month = config.get('active_month', config['front_month'])  # e.g., GCJ26
     symbol = config['symbol']  # e.g., GC.FUT
-    price_min = config['price_min']
-    price_max = config['price_max']
 
     try:
-        print(f"🔍 Resolving instrument ID for {active_month}...")
+        print(f"🔍 Resolving instrument ID for {active_month} using symbol lookup...")
         client = db.Historical(key=API_KEY)
 
         from datetime import datetime, timedelta
         now = datetime.utcnow()
-        start = (now - timedelta(hours=6)).strftime('%Y-%m-%dT%H:%M:%SZ')  # 6 hour window
+        start = (now - timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
         end = now.strftime('%Y-%m-%dT%H:%M:%SZ')
 
+        # Get data and convert to DataFrame for symbol metadata
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
@@ -290,57 +287,56 @@ def resolve_active_month_instrument_id():
             end=end
         )
 
-        # Group trades by instrument_id
+        # Try DataFrame approach first
+        try:
+            df = data.to_df()
+            print(f"   DataFrame columns: {list(df.columns)[:8]}")
+
+            if 'symbol' in df.columns:
+                # Find the instrument_id for our target symbol
+                unique_symbols = df[['instrument_id', 'symbol']].drop_duplicates()
+                print(f"   Found symbols: {unique_symbols['symbol'].unique()}")
+
+                for _, row in unique_symbols.iterrows():
+                    sym = str(row['symbol'])
+                    if active_month in sym:
+                        target_id = int(row['instrument_id'])
+                        active_month_instrument_id = target_id
+                        front_month_instrument_id = target_id
+                        print(f"✅ Matched {active_month} -> {sym}: ID {target_id}")
+                        return target_id
+        except Exception as df_err:
+            print(f"   DataFrame error: {df_err}")
+
+        # Fallback: price-based selection (highest avg = further month)
+        print(f"   Using price-based fallback...")
         instrument_stats = {}
-        all_prices = []
         for r in data:
             iid = r.instrument_id
             price = r.price / 1e9 if r.price > 1e6 else r.price
-            if price < price_min or price > price_max:
+            if price < 2000 or price > 10000:
                 continue
-            all_prices.append(price)
             if iid not in instrument_stats:
-                instrument_stats[iid] = {'prices': [], 'count': 0}
+                instrument_stats[iid] = {'prices': []}
             instrument_stats[iid]['prices'].append(price)
-            instrument_stats[iid]['count'] += 1
 
-        if not instrument_stats:
-            print(f"⚠️  No trades found")
-            return None
+        if instrument_stats:
+            for iid, info in instrument_stats.items():
+                info['avg'] = sum(info['prices']) / len(info['prices'])
+                print(f"   ID {iid}: avg ${info['avg']:.2f}")
 
-        # Calculate stats
-        for iid, info in instrument_stats.items():
-            info['avg'] = sum(info['prices']) / len(info['prices'])
-            info['max'] = max(info['prices'])
-            info['min'] = min(info['prices'])
-            print(f"   ID {iid}: {info['count']} trades, avg ${info['avg']:.2f}, range ${info['min']:.2f}-${info['max']:.2f}")
+            # Select highest avg (GCJ26 trades higher due to contango)
+            sorted_inst = sorted(instrument_stats.items(), key=lambda x: x[1]['avg'], reverse=True)
+            top_id = sorted_inst[0][0]
+            active_month_instrument_id = top_id
+            front_month_instrument_id = top_id
+            print(f"✅ Selected by price: ID {top_id}")
+            return top_id
 
-        # Sort by average price (GCJ26 should have higher avg)
-        sorted_instruments = sorted(instrument_stats.items(), key=lambda x: x[1]['avg'], reverse=True)
-
-        if len(sorted_instruments) >= 2:
-            # Check spread between top 2 instruments
-            top = sorted_instruments[0]
-            second = sorted_instruments[1]
-            spread = top[1]['avg'] - second[1]['avg']
-            print(f"   Spread between top instruments: ${spread:.2f}")
-
-            # If spread is $20+, confidently select the higher one as GCJ26
-            if spread >= 20:
-                active_month_instrument_id = top[0]
-                front_month_instrument_id = top[0]
-                print(f"✅ Selected {active_month} (higher avg by ${spread:.2f}): ID {active_month_instrument_id}")
-                return active_month_instrument_id
-
-        # Fallback: use the instrument with highest average
-        top_instrument = sorted_instruments[0]
-        active_month_instrument_id = top_instrument[0]
-        front_month_instrument_id = top_instrument[0]
-        print(f"✅ Selected {active_month} (highest avg): ID {active_month_instrument_id}, avg ${top_instrument[1]['avg']:.2f}")
-        return active_month_instrument_id
+        return None
 
     except Exception as e:
-        print(f"⚠️  Error resolving instrument ID: {e}")
+        print(f"⚠️  Error: {e}")
         return None
 
 
