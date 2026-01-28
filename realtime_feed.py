@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.5.7"
+APP_VERSION = "15.5.8"
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -256,8 +256,9 @@ active_month_instrument_id = None  # Will be resolved for GCJ26 specifically
 def resolve_active_month_instrument_id():
     """Resolve the instrument_id for the active_month contract (e.g., GCJ26)
 
-    For GC: GCJ26 (Apr) trades ~$70-80 higher than GCG26 (Feb) due to contango.
-    We identify GCJ26 by finding the instrument with trades in the higher price range.
+    Strategy: GCJ26 (Apr) trades consistently ~$30-50 higher than GCG26 (Feb).
+    We find pairs of instruments and select the one with higher average price.
+    If only one instrument found, we check if prices are in the expected GCJ26 range.
     """
     global active_month_instrument_id, front_month_instrument_id
 
@@ -277,7 +278,7 @@ def resolve_active_month_instrument_id():
 
         from datetime import datetime, timedelta
         now = datetime.utcnow()
-        start = (now - timedelta(hours=4)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        start = (now - timedelta(hours=6)).strftime('%Y-%m-%dT%H:%M:%SZ')  # 6 hour window
         end = now.strftime('%Y-%m-%dT%H:%M:%SZ')
 
         data = client.timeseries.get_range(
@@ -289,41 +290,53 @@ def resolve_active_month_instrument_id():
             end=end
         )
 
-        # Group trades by instrument_id with price stats
+        # Group trades by instrument_id
         instrument_stats = {}
+        all_prices = []
         for r in data:
             iid = r.instrument_id
             price = r.price / 1e9 if r.price > 1e6 else r.price
             if price < price_min or price > price_max:
                 continue
+            all_prices.append(price)
             if iid not in instrument_stats:
-                instrument_stats[iid] = {'prices': [], 'count': 0, 'max': 0, 'min': float('inf')}
+                instrument_stats[iid] = {'prices': [], 'count': 0}
             instrument_stats[iid]['prices'].append(price)
             instrument_stats[iid]['count'] += 1
-            if price > instrument_stats[iid]['max']:
-                instrument_stats[iid]['max'] = price
-            if price < instrument_stats[iid]['min']:
-                instrument_stats[iid]['min'] = price
 
         if not instrument_stats:
             print(f"⚠️  No trades found")
             return None
 
-        # Calculate stats for each instrument
+        # Calculate stats
         for iid, info in instrument_stats.items():
-            info['avg'] = sum(info['prices']) / len(info['prices']) if info['prices'] else 0
+            info['avg'] = sum(info['prices']) / len(info['prices'])
+            info['max'] = max(info['prices'])
+            info['min'] = min(info['prices'])
             print(f"   ID {iid}: {info['count']} trades, avg ${info['avg']:.2f}, range ${info['min']:.2f}-${info['max']:.2f}")
 
-        # For Gold: GCJ26 (Apr) trades ~$70+ higher than GCG26 (Feb)
-        # Select the instrument with the HIGHEST MAXIMUM price - this catches the further contract
-        sorted_by_max = sorted(instrument_stats.items(), key=lambda x: x[1]['max'], reverse=True)
+        # Sort by average price (GCJ26 should have higher avg)
+        sorted_instruments = sorted(instrument_stats.items(), key=lambda x: x[1]['avg'], reverse=True)
 
-        # The instrument with the highest max price is GCJ26 (Apr)
-        gcj26_instrument = sorted_by_max[0]
-        active_month_instrument_id = gcj26_instrument[0]
-        front_month_instrument_id = gcj26_instrument[0]
+        if len(sorted_instruments) >= 2:
+            # Check spread between top 2 instruments
+            top = sorted_instruments[0]
+            second = sorted_instruments[1]
+            spread = top[1]['avg'] - second[1]['avg']
+            print(f"   Spread between top instruments: ${spread:.2f}")
 
-        print(f"✅ Selected {active_month}: ID {active_month_instrument_id} (max ${gcj26_instrument[1]['max']:.2f})")
+            # If spread is $20+, confidently select the higher one as GCJ26
+            if spread >= 20:
+                active_month_instrument_id = top[0]
+                front_month_instrument_id = top[0]
+                print(f"✅ Selected {active_month} (higher avg by ${spread:.2f}): ID {active_month_instrument_id}")
+                return active_month_instrument_id
+
+        # Fallback: use the instrument with highest average
+        top_instrument = sorted_instruments[0]
+        active_month_instrument_id = top_instrument[0]
+        front_month_instrument_id = top_instrument[0]
+        print(f"✅ Selected {active_month} (highest avg): ID {active_month_instrument_id}, avg ${top_instrument[1]['avg']:.2f}")
         return active_month_instrument_id
 
     except Exception as e:
