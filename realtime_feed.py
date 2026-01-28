@@ -1706,7 +1706,7 @@ def fetch_full_day_data():
             day_vwap_den += size
 
             # Get trade time in UTC for VWAP calculations
-            trade_utc = datetime.utcfromtimestamp(ts / 1e9)
+            trade_utc = datetime.fromtimestamp(ts / 1e9, tz=timezone.utc)
             trade_hhmm_utc = trade_utc.hour * 100 + trade_utc.minute
 
             # Overnight (18:00-08:20 ET = before 13:20 UTC on same day or after 23:00 UTC previous day)
@@ -3180,7 +3180,7 @@ def fetch_session_history(days=50, force_refresh=False):
             # Convert timestamp to ET
             ts_ns = r.ts_event
             ts_sec = ts_ns / 1e9
-            utc_dt = datetime.utcfromtimestamp(ts_sec)
+            utc_dt = datetime.fromtimestamp(ts_sec, tz=timezone.utc)
             et_dt = utc_dt - timedelta(hours=5)  # UTC to ET
 
             et_hour = et_dt.hour
