@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.8.0"
+APP_VERSION = "15.8.1"
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -4203,16 +4203,17 @@ def process_trade(record):
 
         # PRICE-BAND FILTER: Only accept trades from the higher-priced contract (GCJ26)
         # GCJ26 trades ~$35-40 higher than GCG26 due to contango
-        # Track the max price and only accept trades within $20 of max
         global _price_band_max
+
+        # Hardcoded minimum for GCJ26 based on current market (~$35 above GCG26)
+        # GCG26 is ~5375, so GCJ26 is ~5410. Set floor at 5395 to filter GCG26.
+        gcj26_min_price = 5395  # Trades below this are GCG26, not GCJ26
+
+        if price < gcj26_min_price:
+            return  # Skip GCG26 trades (they're ~$35 lower)
 
         if price > _price_band_max:
             _price_band_max = price  # New max
-
-        # Only accept trades that are within $20 of the max price seen
-        # This filters out the lower-priced GCG26 trades (~$35-40 lower)
-        if _price_band_max > 0 and price < (_price_band_max - 20):
-            return  # Skip lower-priced contract trades (GCG26)
 
         # Also filter by instrument_id if set (from detection)
         if front_month_instrument_id is not None:
