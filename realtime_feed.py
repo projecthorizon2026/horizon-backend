@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.7.0"
+APP_VERSION = "15.8.0"
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -78,6 +78,9 @@ CONTRACT_CONFIG = {
         'price_min': 2000,
         'price_max': 10000,
         'tick_size': 0.10,
+        # GCJ26 trades ~$35-40 higher than GCG26 due to contango
+        # Set target_price_offset to filter for higher-priced contract
+        'target_price_offset': 30,  # Only accept trades >= (detected_gcg26_price + 30)
     },
     'NQ': {
         'symbol': 'NQ.FUT',
@@ -251,6 +254,7 @@ price_history = deque(maxlen=500)  # Reduced from 1000
 last_session_id = None
 front_month_instrument_id = None  # Will be set from historical data
 active_month_instrument_id = None  # Will be resolved for GCJ26 specifically
+_price_band_max = 0  # Track max price for filtering to higher-priced contract (GCJ26)
 
 
 def resolve_active_month_instrument_id():
@@ -4197,7 +4201,20 @@ def process_trade(record):
         if price < config['price_min'] or price > config['price_max']:
             return
 
-        # Filter by instrument_id if set (from detection)
+        # PRICE-BAND FILTER: Only accept trades from the higher-priced contract (GCJ26)
+        # GCJ26 trades ~$35-40 higher than GCG26 due to contango
+        # Track the max price and only accept trades within $20 of max
+        global _price_band_max
+
+        if price > _price_band_max:
+            _price_band_max = price  # New max
+
+        # Only accept trades that are within $20 of the max price seen
+        # This filters out the lower-priced GCG26 trades (~$35-40 lower)
+        if _price_band_max > 0 and price < (_price_band_max - 20):
+            return  # Skip lower-priced contract trades (GCG26)
+
+        # Also filter by instrument_id if set (from detection)
         if front_month_instrument_id is not None:
             if hasattr(record, 'instrument_id') and record.instrument_id != front_month_instrument_id:
                 return  # Skip trades from other contracts
