@@ -1032,70 +1032,49 @@ def fetch_rollover_data():
         front_oi = 0
         next_oi = 0
 
-        # Fetch statistics for both contracts
-        # CME MDP3 statistics schema - try to find OI in various fields
+        # Try definition schema first (most reliable for OI), fallback to statistics
         try:
-            # Fetch for front month
+            # Fetch definitions for front month - contains open_interest field
             front_data = client.timeseries.get_range(
                 dataset='GLBX.MDP3',
-                schema='statistics',
+                schema='definition',
                 stype_in='raw_symbol',
                 symbols=[front_month],
                 start=start_date,
                 end=end_date
             )
 
-            # Get the latest OI value - iterate through all records
-            # Try stat_type 6 (OpenInterest), also check other common fields
-            record_count = 0
+            # Get the latest OI value from definition records
             for record in front_data:
-                record_count += 1
-                # Check for open_interest attribute directly
                 if hasattr(record, 'open_interest') and record.open_interest > 0:
                     front_oi = record.open_interest
-                # Check stat_type 6 (OpenInterest in CME)
-                elif hasattr(record, 'stat_type') and record.stat_type == 6:
-                    if hasattr(record, 'quantity') and record.quantity > 0:
-                        front_oi = record.quantity
-                    elif hasattr(record, 'value') and record.value > 0:
-                        front_oi = int(record.value)
-                # Also try stat_type 21 (which some CME feeds use for OI)
-                elif hasattr(record, 'stat_type') and record.stat_type == 21:
-                    if hasattr(record, 'quantity') and record.quantity > 0:
-                        front_oi = record.quantity
+                elif hasattr(record, 'oi') and record.oi > 0:
+                    front_oi = record.oi
 
-            print(f"   📈 {front_month}: {record_count} stat records, OI={front_oi:,}")
+            print(f"   📈 {front_month}: OI={front_oi:,} (from definition)")
 
         except Exception as e:
             print(f"   ⚠️ Front month OI fetch error: {str(e)[:80]}")
 
         try:
-            # Fetch for next month
+            # Fetch definitions for next month - contains open_interest field
             next_data = client.timeseries.get_range(
                 dataset='GLBX.MDP3',
-                schema='statistics',
+                schema='definition',
                 stype_in='raw_symbol',
                 symbols=[next_month],
                 start=start_date,
                 end=end_date
             )
 
-            # Get the latest OI value - check all possible fields
-            record_count = 0
+            # Get the latest OI value from definition records
             for record in next_data:
-                record_count += 1
                 if hasattr(record, 'open_interest') and record.open_interest > 0:
                     next_oi = record.open_interest
-                elif hasattr(record, 'stat_type') and record.stat_type == 6:
-                    if hasattr(record, 'quantity') and record.quantity > 0:
-                        next_oi = record.quantity
-                    elif hasattr(record, 'value') and record.value > 0:
-                        next_oi = int(record.value)
-                elif hasattr(record, 'stat_type') and record.stat_type == 21:
-                    if hasattr(record, 'quantity') and record.quantity > 0:
-                        next_oi = record.quantity
+                elif hasattr(record, 'oi') and record.oi > 0:
+                    next_oi = record.oi
 
-            print(f"   📈 {next_month}: {record_count} stat records, OI={next_oi:,}")
+            print(f"   📈 {next_month}: OI={next_oi:,} (from definition)")
 
         except Exception as e:
             print(f"   ⚠️ Next month OI fetch error: {str(e)[:80]}")
