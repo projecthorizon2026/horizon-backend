@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.8.1"
+APP_VERSION = "15.8.2"
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -4206,8 +4206,8 @@ def process_trade(record):
         global _price_band_max
 
         # Hardcoded minimum for GCJ26 based on current market (~$35 above GCG26)
-        # GCG26 is ~5375, so GCJ26 is ~5410. Set floor at 5395 to filter GCG26.
-        gcj26_min_price = 5395  # Trades below this are GCG26, not GCJ26
+        # GCG26 is ~5375, so GCJ26 is ~5410. Set floor at 5380 to filter GCG26.
+        gcj26_min_price = 5380  # Trades below this are GCG26, not GCJ26
 
         if price < gcj26_min_price:
             return  # Skip GCG26 trades (they're ~$35 lower)
