@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.5.3"
+APP_VERSION = "15.5.4"
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -254,7 +254,7 @@ active_month_instrument_id = None  # Will be resolved for GCJ26 specifically
 
 
 def resolve_active_month_instrument_id():
-    """Resolve the instrument_id for the active_month contract (e.g., GCJ26)"""
+    """Resolve the instrument_id for the active_month contract (e.g., GCJ26) using definitions"""
     global active_month_instrument_id, front_month_instrument_id
 
     if not HAS_DATABENTO or not API_KEY:
@@ -264,16 +264,51 @@ def resolve_active_month_instrument_id():
     config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
     active_month = config.get('active_month', config['front_month'])  # e.g., GCJ26
     symbol = config['symbol']  # e.g., GC.FUT
-    price_min = config['price_min']
-    price_max = config['price_max']
 
     try:
-        print(f"🔍 Resolving instrument ID for {active_month}...")
+        print(f"🔍 Resolving instrument ID for {active_month} using definitions...")
         client = db.Historical(key=API_KEY)
 
-        # Fetch recent trades and use metadata to get symbol mapping
+        # Fetch instrument definitions which include raw_symbol
         from datetime import datetime, timedelta
         now = datetime.utcnow()
+        # Use a wider time range to ensure we get definitions
+        start = (now - timedelta(days=1)).strftime('%Y-%m-%dT00:00:00Z')
+        end = now.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+        # Try to get definitions
+        try:
+            data = client.timeseries.get_range(
+                dataset='GLBX.MDP3',
+                symbols=[symbol],
+                stype_in='parent',
+                schema='definition',
+                start=start,
+                end=end
+            )
+
+            # Look for the instrument definition matching our active_month
+            for record in data:
+                raw_sym = getattr(record, 'raw_symbol', None)
+                if raw_sym:
+                    # Decode bytes to string if needed
+                    if isinstance(raw_sym, bytes):
+                        raw_sym = raw_sym.decode('utf-8').rstrip('\x00')
+                    print(f"   Found: {raw_sym} (ID: {record.instrument_id})")
+                    if raw_sym.startswith(active_month):
+                        active_month_instrument_id = record.instrument_id
+                        front_month_instrument_id = record.instrument_id
+                        print(f"✅ Matched {active_month}: instrument ID {active_month_instrument_id}")
+                        return active_month_instrument_id
+
+        except Exception as def_error:
+            print(f"   Definition query failed: {def_error}")
+
+        # Fallback: Use trades with price-based selection
+        print(f"   Falling back to price-based detection...")
+        price_min = config['price_min']
+        price_max = config['price_max']
+
         start = (now - timedelta(hours=2)).strftime('%Y-%m-%dT%H:%M:%SZ')
         end = now.strftime('%Y-%m-%dT%H:%M:%SZ')
 
@@ -298,33 +333,23 @@ def resolve_active_month_instrument_id():
             instrument_prices[iid]['prices'].append(price)
             instrument_prices[iid]['count'] += 1
 
-        # GCJ26 (Apr) should have HIGHER prices than GCG26 (Feb) due to contango
-        # Find the instrument with the highest average price - that's likely the further-dated contract
+        # Select by highest average price (contango)
         if instrument_prices:
             for iid, info in instrument_prices.items():
                 avg_price = sum(info['prices']) / len(info['prices']) if info['prices'] else 0
                 info['avg_price'] = avg_price
-                print(f"   Instrument {iid}: {info['count']} trades, avg price ${avg_price:.2f}")
+                print(f"   Instrument {iid}: {info['count']} trades, avg ${avg_price:.2f}")
 
-            # Sort by average price descending - highest price is the further contract (GCJ26)
             sorted_instruments = sorted(instrument_prices.items(), key=lambda x: x[1]['avg_price'], reverse=True)
 
-            if len(sorted_instruments) >= 2:
-                # Use the instrument with the HIGHER price (GCJ26 is further out, higher price in contango)
-                gcj26_instrument = sorted_instruments[0]  # Highest price = GCJ26 (Apr)
+            if sorted_instruments:
+                gcj26_instrument = sorted_instruments[0]  # Highest price
                 active_month_instrument_id = gcj26_instrument[0]
                 front_month_instrument_id = gcj26_instrument[0]
-                print(f"✅ Selected {active_month} (highest price): instrument ID {active_month_instrument_id}, avg ${gcj26_instrument[1]['avg_price']:.2f}")
+                print(f"✅ Selected (highest price): ID {active_month_instrument_id}, avg ${gcj26_instrument[1]['avg_price']:.2f}")
                 return active_month_instrument_id
-            elif sorted_instruments:
-                # Only one instrument found, use it
-                iid = sorted_instruments[0][0]
-                active_month_instrument_id = iid
-                front_month_instrument_id = iid
-                print(f"✅ Only one instrument found: {iid}")
-                return iid
 
-        print(f"⚠️  Could not resolve {active_month} instrument ID, will auto-detect from trades")
+        print(f"⚠️  Could not resolve {active_month} instrument ID")
         return None
 
     except Exception as e:
