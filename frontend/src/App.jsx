@@ -16,7 +16,7 @@ import MarketPulse from './MarketPulse';
 // API Configuration - uses environment variables in production
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const REDFOLDER_BASE = import.meta.env.VITE_REDFOLDER_URL || 'http://localhost:8081';
-const BUILD_VERSION = '18.6.0';
+const BUILD_VERSION = '18.7.0';
 console.log('Horizon v' + BUILD_VERSION); // Force cache bust - reload required
 
 // Auth Context
@@ -21246,7 +21246,7 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 10, color: '#888', marginBottom: 4 }}>CURRENT</div>
               <div style={{ fontSize: 14, fontWeight: 700, color: '#00aaff' }}>
-                {metrics.rollover.front_month || metrics.contract || 'GCG26'}
+                {metrics.rollover.front_month || metrics.contract || 'GCJ26'}
               </div>
               <div style={{ fontSize: 9, color: '#666', marginTop: 2 }}>
                 {metrics.rollover.front_month_name || metrics.contract_name || ''}
@@ -22820,7 +22820,7 @@ const CONTRACTS = {
   'BTC-SPOT': { symbol: 'BTC-SPOT', name: 'Bitcoin Spot 24/7', ticker: 'BTCUSDT', asset: 'BTC-SPOT', icon: '₿', isSpot: true },
   'ESH26': { symbol: 'ESH26', name: 'E-mini S&P Mar 2026', ticker: 'ES1!', asset: 'ES', icon: '📊' },
   'NQH26': { symbol: 'NQH26', name: 'Nasdaq Mar 2026', ticker: 'NQ1!', asset: 'NQ', icon: '💻' },
-  'GCG26': { symbol: 'GCG26', name: 'Gold Feb 2026', ticker: 'GC1!', asset: 'GC', icon: '🥇' },
+  'GCJ26': { symbol: 'GCJ26', name: 'Gold Apr 2026', ticker: 'GC1!', asset: 'GC', icon: '🥇' },
   'BTCG26': { symbol: 'BTCG26', name: 'Bitcoin CME Feb 2026', ticker: 'BTC1!', asset: 'BTC', icon: '🅱️' },
   'CLG26': { symbol: 'CLG26', name: 'Crude Oil Feb 2026', ticker: 'CL1!', asset: 'CL', icon: '🛢️' },
 };
@@ -23258,7 +23258,7 @@ const FloatingFooter = ({ globalData, selectedContract, onContractChange, contra
         fontSize: 11,
         color: '#888'
       }}>
-        {contracts[selectedContract]?.name || 'Gold Feb 2026'}
+        {contracts[selectedContract]?.name || 'Gold Apr 2026'}
       </div>
 
       {/* Separator */}
@@ -23368,7 +23368,7 @@ const App = () => {
   const [activeTab, setActiveTab] = useState('backtest');
   const [settings, setSettings] = useLocalStorage('horizon_settings', DEFAULT_SETTINGS);
   const [dateRange, setDateRange] = useState({ start: '2021-01-01', end: '2026-12-31' });
-  const [selectedContract, setSelectedContract] = useLocalStorage('horizon_contract', 'GCG26');
+  const [selectedContract, setSelectedContract] = useLocalStorage('horizon_contract', 'GCJ26');
 
   // Sync contract to backend on page load (ensures backend matches frontend's saved contract)
   useEffect(() => {
@@ -23407,8 +23407,8 @@ const App = () => {
   const connectionResetKey = useRef(0);
 
   const [globalData, setGlobalData] = useState({
-    contract: 'GCG26',
-    contract_name: 'Gold Feb 2026',
+    contract: 'GCJ26',
+    contract_name: 'Gold Apr 2026',
     current_price: 0,
     current_et_time: '--:--:--',
     current_et_date: ''
@@ -23598,8 +23598,8 @@ const App = () => {
                                  data.data_source === 'INITIALIZING');
 
           setGlobalData({
-            contract: data.contract || 'GCG26',
-            contract_name: data.contract_name || 'Gold Feb 2026',
+            contract: data.contract || 'GCJ26',
+            contract_name: data.contract_name || 'Gold Apr 2026',
             current_price: data.current_price || 0,
             current_et_time: data.current_et_time || '--:--:--',
             current_et_date: data.current_et_date || '',
