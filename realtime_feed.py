@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.9.1"
+APP_VERSION = "15.9.2"
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -255,10 +255,9 @@ _price_band_max = 0  # Track max price for filtering to higher-priced contract (
 
 
 def resolve_active_month_instrument_id():
-    """Resolve the instrument_id for the active_month contract (e.g., GCJ26)
+    """Resolve the instrument_id for the active_month contract (e.g., GCJ6)
 
-    Uses Databento's symbology.resolve API to directly convert raw_symbol to instrument_id.
-    This is the official and most reliable method.
+    Uses definitions schema to find the instrument_id for the target contract.
     """
     global active_month_instrument_id, front_month_instrument_id
 
@@ -267,64 +266,19 @@ def resolve_active_month_instrument_id():
         return None
 
     config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
-    active_month = config.get('active_month', config['front_month'])  # e.g., GCJ26
+    active_month = config.get('active_month', config['front_month'])  # e.g., GCJ6
+    symbol = config['symbol']  # e.g., GC.FUT
 
     try:
-        print(f"🔍 Resolving instrument ID for {active_month} using symbology.resolve API...")
+        print(f"🔍 Resolving instrument ID for {active_month} using definitions...")
         client = db.Historical(key=API_KEY)
 
         from datetime import datetime, timedelta
         now = datetime.utcnow()
-        # Use a date range that covers today
-        start_date = now.strftime('%Y-%m-%d')
-        end_date = (now + timedelta(days=1)).strftime('%Y-%m-%d')
-
-        # Use symbology.resolve to convert raw_symbol to instrument_id
-        print(f"   Calling symbology.resolve for {active_month}...")
-        result = client.symbology.resolve(
-            dataset='GLBX.MDP3',
-            symbols=[active_month],  # e.g., ["GCJ26"]
-            stype_in='raw_symbol',
-            stype_out='instrument_id',
-            start_date=start_date,
-            end_date=end_date,
-        )
-
-        print(f"   Symbology result: {result}")
-
-        # Parse the result to get instrument_id
-        # Result format: {'result': {'GCJ26': [{'d0': '...', 'd1': '...', 's': '12345'}]}, ...}
-        if hasattr(result, 'result') and active_month in result.result:
-            mappings = result.result[active_month]
-            if mappings and len(mappings) > 0:
-                # Get the most recent mapping
-                instrument_id_str = mappings[-1].get('s') if isinstance(mappings[-1], dict) else getattr(mappings[-1], 's', None)
-                if instrument_id_str:
-                    target_iid = int(instrument_id_str)
-                    active_month_instrument_id = target_iid
-                    front_month_instrument_id = target_iid
-                    print(f"✅ Resolved {active_month} -> instrument_id {target_iid}")
-                    return target_iid
-
-        # Try alternate result format (dict-like access)
-        if isinstance(result, dict) and 'result' in result and active_month in result['result']:
-            mappings = result['result'][active_month]
-            if mappings and len(mappings) > 0:
-                instrument_id_str = mappings[-1].get('s')
-                if instrument_id_str:
-                    target_iid = int(instrument_id_str)
-                    active_month_instrument_id = target_iid
-                    front_month_instrument_id = target_iid
-                    print(f"✅ Resolved {active_month} -> instrument_id {target_iid}")
-                    return target_iid
-
-        print(f"   ⚠️ Could not parse symbology result, trying definitions fallback...")
-
-        # Fallback: Use definitions schema
-        symbol = config['symbol']  # e.g., GC.FUT
         start = (now - timedelta(hours=2)).strftime('%Y-%m-%dT%H:%M:%SZ')
         end = now.strftime('%Y-%m-%dT%H:%M:%SZ')
 
+        # Use definitions schema to find instrument_id
         definitions = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
@@ -336,11 +290,13 @@ def resolve_active_month_instrument_id():
 
         for defn in definitions:
             raw_sym = getattr(defn, 'raw_symbol', None)
+            if raw_sym:
+                print(f"   Found definition: {raw_sym} = ID {defn.instrument_id}")
             if raw_sym == active_month:
                 target_iid = defn.instrument_id
                 active_month_instrument_id = target_iid
                 front_month_instrument_id = target_iid
-                print(f"✅ Found {active_month} via definitions -> instrument_id {target_iid}")
+                print(f"✅ Matched {active_month} -> instrument_id {target_iid}")
                 return target_iid
 
         print(f"   ⚠️ No match found for {active_month}")
