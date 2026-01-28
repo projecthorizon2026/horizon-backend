@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.8.3"
+APP_VERSION = "15.9.0"
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -260,8 +260,8 @@ _price_band_max = 0  # Track max price for filtering to higher-priced contract (
 def resolve_active_month_instrument_id():
     """Resolve the instrument_id for the active_month contract (e.g., GCJ26)
 
-    Uses definitions schema to directly match raw_symbol to the target contract.
-    This is 100% reliable vs price-based detection.
+    Uses Databento's symbology.resolve API to directly convert raw_symbol to instrument_id.
+    This is the official and most reliable method.
     """
     global active_month_instrument_id, front_month_instrument_id
 
@@ -271,19 +271,63 @@ def resolve_active_month_instrument_id():
 
     config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
     active_month = config.get('active_month', config['front_month'])  # e.g., GCJ26
-    symbol = config['symbol']  # e.g., GC.FUT
 
     try:
-        print(f"🔍 Resolving instrument ID for {active_month} using definitions...")
+        print(f"🔍 Resolving instrument ID for {active_month} using symbology.resolve API...")
         client = db.Historical(key=API_KEY)
 
         from datetime import datetime, timedelta
         now = datetime.utcnow()
+        # Use a date range that covers today
+        start_date = now.strftime('%Y-%m-%d')
+        end_date = (now + timedelta(days=1)).strftime('%Y-%m-%d')
+
+        # Use symbology.resolve to convert raw_symbol to instrument_id
+        print(f"   Calling symbology.resolve for {active_month}...")
+        result = client.symbology.resolve(
+            dataset='GLBX.MDP3',
+            symbols=[active_month],  # e.g., ["GCJ26"]
+            stype_in='raw_symbol',
+            stype_out='instrument_id',
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        print(f"   Symbology result: {result}")
+
+        # Parse the result to get instrument_id
+        # Result format: {'result': {'GCJ26': [{'d0': '...', 'd1': '...', 's': '12345'}]}, ...}
+        if hasattr(result, 'result') and active_month in result.result:
+            mappings = result.result[active_month]
+            if mappings and len(mappings) > 0:
+                # Get the most recent mapping
+                instrument_id_str = mappings[-1].get('s') if isinstance(mappings[-1], dict) else getattr(mappings[-1], 's', None)
+                if instrument_id_str:
+                    target_iid = int(instrument_id_str)
+                    active_month_instrument_id = target_iid
+                    front_month_instrument_id = target_iid
+                    print(f"✅ Resolved {active_month} -> instrument_id {target_iid}")
+                    return target_iid
+
+        # Try alternate result format (dict-like access)
+        if isinstance(result, dict) and 'result' in result and active_month in result['result']:
+            mappings = result['result'][active_month]
+            if mappings and len(mappings) > 0:
+                instrument_id_str = mappings[-1].get('s')
+                if instrument_id_str:
+                    target_iid = int(instrument_id_str)
+                    active_month_instrument_id = target_iid
+                    front_month_instrument_id = target_iid
+                    print(f"✅ Resolved {active_month} -> instrument_id {target_iid}")
+                    return target_iid
+
+        print(f"   ⚠️ Could not parse symbology result, trying definitions fallback...")
+
+        # Fallback: Use definitions schema
+        symbol = config['symbol']  # e.g., GC.FUT
         start = (now - timedelta(hours=2)).strftime('%Y-%m-%dT%H:%M:%SZ')
         end = now.strftime('%Y-%m-%dT%H:%M:%SZ')
 
-        # Step 1: Fetch definitions to get instrument_id -> raw_symbol mapping
-        print(f"   Fetching definitions for {symbol}...")
         definitions = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
@@ -293,75 +337,20 @@ def resolve_active_month_instrument_id():
             end=end
         )
 
-        # Build mapping of instrument_id -> raw_symbol
-        instrument_symbols = {}
         for defn in definitions:
-            iid = defn.instrument_id
             raw_sym = getattr(defn, 'raw_symbol', None)
-            if raw_sym:
-                instrument_symbols[iid] = raw_sym
-                print(f"   Definition: ID {iid} = {raw_sym}")
+            if raw_sym == active_month:
+                target_iid = defn.instrument_id
+                active_month_instrument_id = target_iid
+                front_month_instrument_id = target_iid
+                print(f"✅ Found {active_month} via definitions -> instrument_id {target_iid}")
+                return target_iid
 
-        # Step 2: Find the instrument_id that matches our target active_month
-        target_iid = None
-        for iid, raw_sym in instrument_symbols.items():
-            if raw_sym == active_month:  # Direct match: "GCJ26" == "GCJ26"
-                target_iid = iid
-                print(f"   ✅ MATCH: {raw_sym} = ID {iid}")
-                break
-
-        if target_iid:
-            active_month_instrument_id = target_iid
-            front_month_instrument_id = target_iid
-            print(f"✅ Selected {active_month}: ID {active_month_instrument_id} (exact symbol match)")
-            return active_month_instrument_id
-
-        # Fallback: If no definitions, try to use price-based detection
-        print(f"   ⚠️ No definition match for {active_month}, falling back to price detection...")
-
-        # Fetch trades and use highest price (contango)
-        data = client.timeseries.get_range(
-            dataset='GLBX.MDP3',
-            symbols=[symbol],
-            stype_in='parent',
-            schema='trades',
-            start=start,
-            end=end
-        )
-
-        instrument_stats = {}
-        for r in data:
-            iid = r.instrument_id
-            price = r.price / 1e9 if r.price > 1e6 else r.price
-            if price < 2000 or price > 10000:
-                continue
-            if iid not in instrument_stats:
-                instrument_stats[iid] = {'prices': [], 'count': 0}
-            instrument_stats[iid]['prices'].append(price)
-            instrument_stats[iid]['count'] += 1
-
-        if not instrument_stats:
-            print("⚠️  No trades found")
-            return None
-
-        # Use MAX price to detect GCJ26 (trades higher due to contango)
-        for iid, info in instrument_stats.items():
-            info['max'] = max(info['prices'])
-            info['min'] = min(info['prices'])
-            sym_name = instrument_symbols.get(iid, f"ID_{iid}")
-            print(f"   {sym_name} (ID {iid}): {info['count']} trades, range ${info['min']:.2f}-${info['max']:.2f}")
-
-        # Sort by MAX price - GCJ26 has higher max
-        sorted_inst = sorted(instrument_stats.items(), key=lambda x: x[1]['max'], reverse=True)
-        top = sorted_inst[0]
-        active_month_instrument_id = top[0]
-        front_month_instrument_id = top[0]
-
-        print(f"✅ Selected ID {active_month_instrument_id} (highest max price ${top[1]['max']:.2f})")
-        return active_month_instrument_id
+        print(f"   ⚠️ No match found for {active_month}")
+        return None
 
     except Exception as e:
-        print(f"⚠️  Error: {e}")
+        print(f"⚠️  Error resolving {active_month}: {e}")
         import traceback
         traceback.print_exc()
         return None
