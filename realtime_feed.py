@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """
-PROJECT HORIZON - HTTP LIVE FEED v15.0.0
+PROJECT HORIZON - HTTP LIVE FEED v15.1.0
 All live data from Databento - no placeholders
 """
 APP_VERSION = "15.1.0"
+
+# Suppress deprecation warnings (utcfromtimestamp) to avoid log flooding
+import warnings
+warnings.filterwarnings('ignore', category=DeprecationWarning, message='.*utcfromtimestamp.*')
+
 import os
 import json
 import threading
