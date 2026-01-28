@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.5.5"
+APP_VERSION = "15.5.6"
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -5027,6 +5027,47 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             market_data = fetch_market_overview()
             self.wfile.write(json.dumps(market_data).encode())
             return
+
+        # Handle /red-folder endpoint for Fed event scheduler
+        if path == '/red-folder' or path == '/redfolder':
+            # Check scheduled Fed events
+            from datetime import datetime, timedelta
+            now = datetime.now()
+
+            # High impact event: Powell speaking Jan 29, 2026
+            FED_EVENTS = [
+                (2026, 1, 29, 13, 0, "Fed Chair Powell Speaks", "CRITICAL"),
+                (2026, 1, 28, 14, 30, "FOMC Press Conference", "CRITICAL"),
+            ]
+
+            scheduler_data = {'active': False, 'event_active': False}
+
+            for event in FED_EVENTS:
+                year, month, day, hour, minute, event_name, impact = event
+                event_time = datetime(year, month, day, hour, minute)
+                window_start = event_time - timedelta(minutes=5)
+                window_end = event_time + timedelta(hours=3)  # Extended window
+
+                if window_start <= now <= window_end:
+                    scheduler_data = {
+                        'active': True,
+                        'event_active': True,
+                        'event_name': event_name,
+                        'impact_level': impact,
+                        'scheduled_time': event_time.strftime('%Y-%m-%d %H:%M ET'),
+                        'status': 'in_progress' if now >= event_time else 'upcoming'
+                    }
+                    break
+
+            if path == '/red-folder':
+                self.wfile.write(json.dumps({
+                    'status': 'ok',
+                    'is_speaking': scheduler_data.get('active', False),
+                    'scheduler': scheduler_data,
+                    'transcription': {'segments': [], 'full_text': ''},
+                    'speaker_detection': {'current_speaker': 'Powell' if scheduler_data.get('active') else None}
+                }).encode())
+                return
 
         # Default endpoint - live data
         with lock:
