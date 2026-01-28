@@ -995,6 +995,22 @@ def fetch_rollover_data():
     front_month_name = config.get('front_month_name', config['name'])
     next_month_name = config.get('next_month_name', '')
 
+    # Initialize with defaults immediately so state is always valid
+    with lock:
+        if 'rollover' not in state or not state['rollover'].get('front_month'):
+            state['rollover'] = {
+                'front_month': front_month,
+                'front_month_name': front_month_name,
+                'front_month_oi': 0,
+                'next_month': next_month,
+                'next_month_name': next_month_name,
+                'next_month_oi': 0,
+                'oi_ratio': 0.0,
+                'should_roll': False,
+                'roll_signal': 'HOLD',
+                'last_update': get_et_now().strftime('%Y-%m-%d %H:%M:%S ET'),
+            }
+
     try:
         print(f"📊 Fetching Open Interest for rollover: {front_month} vs {next_month}...")
 
@@ -1010,7 +1026,7 @@ def fetch_rollover_data():
         next_oi = 0
 
         # Fetch statistics for both contracts
-        # Using statistics schema which contains open_interest (stat_type=1)
+        # CME statistics: stat_type 1 = Open Interest, value field contains the OI
         try:
             # Fetch for front month
             front_data = client.timeseries.get_range(
@@ -1022,14 +1038,16 @@ def fetch_rollover_data():
                 end=end_date
             )
 
-            # Get the latest OI value
+            # Get the latest OI value - check both 'quantity' and 'value' attributes
             for record in front_data:
                 if hasattr(record, 'stat_type') and record.stat_type == 1:  # 1 = Open Interest
-                    if hasattr(record, 'quantity'):
+                    if hasattr(record, 'quantity') and record.quantity > 0:
                         front_oi = record.quantity
+                    elif hasattr(record, 'value') and record.value > 0:
+                        front_oi = int(record.value)
 
         except Exception as e:
-            print(f"   ⚠️ Front month OI fetch error: {str(e)[:50]}")
+            print(f"   ⚠️ Front month OI fetch error: {str(e)[:80]}")
 
         try:
             # Fetch for next month
@@ -1042,14 +1060,16 @@ def fetch_rollover_data():
                 end=end_date
             )
 
-            # Get the latest OI value
+            # Get the latest OI value - check both 'quantity' and 'value' attributes
             for record in next_data:
                 if hasattr(record, 'stat_type') and record.stat_type == 1:  # 1 = Open Interest
-                    if hasattr(record, 'quantity'):
+                    if hasattr(record, 'quantity') and record.quantity > 0:
                         next_oi = record.quantity
+                    elif hasattr(record, 'value') and record.value > 0:
+                        next_oi = int(record.value)
 
         except Exception as e:
-            print(f"   ⚠️ Next month OI fetch error: {str(e)[:50]}")
+            print(f"   ⚠️ Next month OI fetch error: {str(e)[:80]}")
 
         # Calculate rollover metrics
         oi_ratio = 0.0
@@ -1070,7 +1090,7 @@ def fetch_rollover_data():
                 should_roll = False
                 roll_signal = 'HOLD'
 
-        # Update state
+        # Update state with fetched values
         with lock:
             state['rollover'] = {
                 'front_month': front_month,
@@ -1091,6 +1111,7 @@ def fetch_rollover_data():
 
     except Exception as e:
         print(f"❌ Rollover fetch error: {e}")
+        # Keep default state on error
 
 
 # ============================================
@@ -3869,7 +3890,7 @@ def start_stream():
     fetch_todays_tpo_data()  # Load full day TPO data for all periods (A-Z)
     fetch_current_session_history()
     fetch_historical_candle_volumes()
-    fetch_rollover_data()  # Fetch Open Interest for contract rollover indicator
+    # Rollover data fetched in background to not block startup
 
     # Load cached data from files first (instant startup)
     print("⚡ Loading cached data from files...")
@@ -3896,6 +3917,9 @@ def start_stream():
     # Periodic rollover data refresh (Open Interest updates typically at settlement)
     def periodic_rollover_fetch():
         global stream_running
+        # Fetch immediately on startup, then every 5 minutes
+        time.sleep(5)  # Short delay to let main data load first
+        fetch_rollover_data()
         while stream_running:
             time.sleep(300)  # Check every 5 minutes
             if stream_running:
