@@ -1025,15 +1025,15 @@ def fetch_rollover_data():
         et_tz = pytz.timezone('America/New_York')
         et_now = datetime.now(et_tz)
 
-        # Fetch last 2 days to ensure we get recent OI data
-        start_date = (et_now - timedelta(days=2)).strftime('%Y-%m-%d')
-        end_date = et_now.strftime('%Y-%m-%d')
+        # Fetch last 7 days to ensure we get the most recent OI data (OI only published at daily settlement)
+        start_date = (et_now - timedelta(days=7)).strftime('%Y-%m-%d')
+        end_date = (et_now + timedelta(days=1)).strftime('%Y-%m-%d')  # Include today
 
         front_oi = 0
         next_oi = 0
 
         # Fetch statistics for both contracts
-        # CME statistics: stat_type 1 = Open Interest, value field contains the OI
+        # CME MDP3 statistics schema - try to find OI in various fields
         try:
             # Fetch for front month
             front_data = client.timeseries.get_range(
@@ -1045,14 +1045,26 @@ def fetch_rollover_data():
                 end=end_date
             )
 
-            # Get the latest OI value - check both 'quantity' and 'value' attributes
-            # CME stat_type: 1=Open, 2=High, 3=Low, 4=Close, 5=Settlement, 6=OpenInterest
+            # Get the latest OI value - iterate through all records
+            # Try stat_type 6 (OpenInterest), also check other common fields
+            record_count = 0
             for record in front_data:
-                if hasattr(record, 'stat_type') and record.stat_type == 6:  # 6 = Open Interest
+                record_count += 1
+                # Check for open_interest attribute directly
+                if hasattr(record, 'open_interest') and record.open_interest > 0:
+                    front_oi = record.open_interest
+                # Check stat_type 6 (OpenInterest in CME)
+                elif hasattr(record, 'stat_type') and record.stat_type == 6:
                     if hasattr(record, 'quantity') and record.quantity > 0:
                         front_oi = record.quantity
                     elif hasattr(record, 'value') and record.value > 0:
                         front_oi = int(record.value)
+                # Also try stat_type 21 (which some CME feeds use for OI)
+                elif hasattr(record, 'stat_type') and record.stat_type == 21:
+                    if hasattr(record, 'quantity') and record.quantity > 0:
+                        front_oi = record.quantity
+
+            print(f"   📈 {front_month}: {record_count} stat records, OI={front_oi:,}")
 
         except Exception as e:
             print(f"   ⚠️ Front month OI fetch error: {str(e)[:80]}")
@@ -1068,13 +1080,22 @@ def fetch_rollover_data():
                 end=end_date
             )
 
-            # Get the latest OI value - stat_type 6 = Open Interest
+            # Get the latest OI value - check all possible fields
+            record_count = 0
             for record in next_data:
-                if hasattr(record, 'stat_type') and record.stat_type == 6:  # 6 = Open Interest
+                record_count += 1
+                if hasattr(record, 'open_interest') and record.open_interest > 0:
+                    next_oi = record.open_interest
+                elif hasattr(record, 'stat_type') and record.stat_type == 6:
                     if hasattr(record, 'quantity') and record.quantity > 0:
                         next_oi = record.quantity
                     elif hasattr(record, 'value') and record.value > 0:
                         next_oi = int(record.value)
+                elif hasattr(record, 'stat_type') and record.stat_type == 21:
+                    if hasattr(record, 'quantity') and record.quantity > 0:
+                        next_oi = record.quantity
+
+            print(f"   📈 {next_month}: {record_count} stat records, OI={next_oi:,}")
 
         except Exception as e:
             print(f"   ⚠️ Next month OI fetch error: {str(e)[:80]}")
