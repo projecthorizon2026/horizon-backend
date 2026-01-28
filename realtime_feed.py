@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.4.1"
+APP_VERSION = "15.4.2"
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -108,8 +108,8 @@ lock = threading.Lock()
 
 state = {
     'ticker': 'GC1!',
-    'contract': 'GCH26',  # Actual front-month contract symbol
-    'contract_name': 'Gold Mar 2026',  # Human readable name
+    'contract': 'GCJ26',  # Active contract we're trading
+    'contract_name': 'Gold Apr 2026',  # Human readable name
     'asset_class': 'GC',  # GC = Gold, NQ = Nasdaq
     'current_price': 0.0,
     'bid': 0.0,
