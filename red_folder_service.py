@@ -136,6 +136,7 @@ HIGH_IMPACT_EVENTS = [
 
     # ============= 2026 EVENTS =============
     # FOMC Press Conferences (2:30 PM ET) - CRITICAL
+    (2026, 1, 29, 13, 0, "Fed Chair Powell Speaks", "CRITICAL"),  # Powell speaking today
     (2026, 1, 28, 14, 30, "FOMC Press Conference", "CRITICAL"),
     (2026, 3, 18, 14, 30, "FOMC Press Conference", "CRITICAL"),
     (2026, 5, 6, 14, 30, "FOMC Press Conference", "CRITICAL"),
