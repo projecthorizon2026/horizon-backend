@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.6.0"
+APP_VERSION = "15.6.1"
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -66,7 +66,7 @@ PORT = int(os.environ.get('PORT', 8080))
 # Contract configurations
 CONTRACT_CONFIG = {
     'GC': {
-        'symbol': 'GC.FUT',
+        'symbol': 'GC.c.1',  # Second continuous contract = GCJ26 when GCG26 is front
         'front_month': 'GCG26',
         'front_month_name': 'Gold Feb 2026',
         'next_month': 'GCJ26',
@@ -281,7 +281,7 @@ def resolve_active_month_instrument_id():
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='parent',
+            stype_in='continuous',
             schema='trades',
             start=start,
             end=end
@@ -1124,7 +1124,7 @@ def fetch_rollover_data():
             front_data = client.timeseries.get_range(
                 dataset='GLBX.MDP3',
                 schema='ohlcv-1d',
-                stype_in='parent',
+                stype_in='continuous',
                 symbols=[front_month],
                 start=start_date,
                 end=end_date
@@ -1153,7 +1153,7 @@ def fetch_rollover_data():
             next_data = client.timeseries.get_range(
                 dataset='GLBX.MDP3',
                 schema='ohlcv-1d',
-                stype_in='parent',
+                stype_in='continuous',
                 symbols=[next_month],
                 start=start_date,
                 end=end_date
@@ -1287,7 +1287,7 @@ def fetch_pd_levels():
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='parent',  # Use raw_symbol for specific contracts like GCJ26
+            stype_in='continuous',  # Use raw_symbol for specific contracts like GCJ26
             schema='trades',
             start=start_ts,
             end=end_ts
@@ -1536,7 +1536,7 @@ def fetch_all_ibs():
                 data = client.timeseries.get_range(
                     dataset='GLBX.MDP3',
                     symbols=[symbol],
-                    stype_in='parent',
+                    stype_in='continuous',
                     schema='trades',
                     start=utc_start,
                     end=utc_end
@@ -1604,7 +1604,7 @@ def fetch_all_ibs():
                             a_data = client.timeseries.get_range(
                                 dataset='GLBX.MDP3',
                                 symbols=[symbol],
-                                stype_in='parent',
+                                stype_in='continuous',
                                 schema='trades',
                                 start=f"{today}T14:30:00Z",
                                 end=f"{today}T15:00:00Z"
@@ -1633,7 +1633,7 @@ def fetch_all_ibs():
                             b_data = client.timeseries.get_range(
                                 dataset='GLBX.MDP3',
                                 symbols=[symbol],
-                                stype_in='parent',
+                                stype_in='continuous',
                                 schema='trades',
                                 start=f"{today}T15:00:00Z",
                                 end=f"{today}T15:30:00Z"
@@ -1728,7 +1728,7 @@ def fetch_full_day_data():
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='parent',
+            stype_in='continuous',
             schema='trades',
             start=utc_start,
             end=utc_end
@@ -1914,7 +1914,7 @@ def fetch_todays_tpo_data():
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='parent',
+            stype_in='continuous',
             schema='trades',
             start=day_start_utc.strftime('%Y-%m-%dT%H:%M:%SZ'),
             end=now_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -2157,7 +2157,7 @@ def fetch_ended_sessions_ohlc():
                 data = client.timeseries.get_range(
                     dataset='GLBX.MDP3',
                     symbols=[symbol],
-                    stype_in='parent',
+                    stype_in='continuous',
                     schema='trades',
                     start=utc_start,
                     end=utc_end
@@ -2401,7 +2401,7 @@ def fetch_week_sessions_ohlc(week_id):
                 data = client.timeseries.get_range(
                     dataset='GLBX.MDP3',
                     symbols=[symbol],
-                    stype_in='parent',
+                    stype_in='continuous',
                     schema='trades',
                     start=start_utc,
                     end=end_utc
@@ -2633,7 +2633,7 @@ def fetch_historic_tpo_profiles(days=40):
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='parent',  # Use parent for more historical data
+            stype_in='continuous',  # Use parent for more historical data
             schema='ohlcv-1h',  # 1-hour bars
             start=start_utc,
             end=end_utc
@@ -3214,7 +3214,7 @@ def fetch_session_history(days=50, force_refresh=False):
             data = client.timeseries.get_range(
                 dataset='GLBX.MDP3',
                 symbols=[symbol],
-                stype_in='parent',
+                stype_in='continuous',
                 schema='trades',
                 start=utc_start,
                 end=utc_end
@@ -3234,7 +3234,7 @@ def fetch_session_history(days=50, force_refresh=False):
                 data = client.timeseries.get_range(
                     dataset='GLBX.MDP3',
                     symbols=[symbol],
-                    stype_in='parent',
+                    stype_in='continuous',
                     schema='trades',
                     start=utc_start,
                     end=utc_end
@@ -3436,7 +3436,7 @@ def fetch_historical_sessions_ohlc(days=6):
                 data = client.timeseries.get_range(
                     dataset='GLBX.MDP3',
                     symbols=[symbol],
-                    stype_in='parent',
+                    stype_in='continuous',
                     schema='trades',
                     start=start_utc,
                     end=end_utc
@@ -3610,7 +3610,7 @@ def fetch_current_session_history():
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='parent',
+            stype_in='continuous',
             schema='trades',
             start=utc_start,
             end=utc_end
@@ -3766,7 +3766,7 @@ def fetch_historical_candle_volumes():
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='parent',
+            stype_in='continuous',
             schema='trades',
             start=utc_start_str,
             end=utc_end_str
@@ -4078,7 +4078,7 @@ def start_stream():
             live_client.subscribe(
                 dataset='GLBX.MDP3',
                 schema='trades',
-                stype_in='parent',  # Use raw_symbol for specific contracts like GCJ26
+                stype_in='continuous',  # Use raw_symbol for specific contracts like GCJ26
                 symbols=[symbol]
             )
 
@@ -4152,17 +4152,12 @@ def switch_contract(new_contract):
 
 
 def process_trade(record):
-    """Process incoming trade data - only front month contract"""
+    """Process incoming trade data - only active contract trades"""
     global state, last_session_id, front_month_instrument_id, ACTIVE_CONTRACT
 
     try:
         if not hasattr(record, 'price'):
             return
-
-        # Filter to only process front month trades
-        if front_month_instrument_id is not None:
-            if hasattr(record, 'instrument_id') and record.instrument_id != front_month_instrument_id:
-                return  # Skip trades from other contracts
 
         price = record.price / 1e9 if record.price > 1e6 else record.price
         size = getattr(record, 'size', 1)
@@ -4172,6 +4167,11 @@ def process_trade(record):
         config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
         if price < config['price_min'] or price > config['price_max']:
             return
+
+        # Filter by instrument_id if set (from detection)
+        if front_month_instrument_id is not None:
+            if hasattr(record, 'instrument_id') and record.instrument_id != front_month_instrument_id:
+                return  # Skip trades from other contracts
         
         with lock:
             # Update price
