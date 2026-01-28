@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.5.2"
+APP_VERSION = "15.5.3"
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -1327,14 +1327,19 @@ def fetch_pd_levels():
             print("⚠️  No valid trades found for PD")
             return
 
-        # Find front month = instrument with most trades
-        front_month = max(by_instrument.items(), key=lambda x: x[1]['count'])
-        iid, data = front_month
-
-        # Set front month ID for live trade filtering (if not already set)
-        if front_month_instrument_id is None:
-            front_month_instrument_id = iid
-            print(f"   🎯 Front month instrument ID: {iid}")
+        # Use front_month_instrument_id if already set (GCJ26), otherwise pick by volume
+        if front_month_instrument_id and front_month_instrument_id in by_instrument:
+            iid = front_month_instrument_id
+            data = by_instrument[iid]
+            print(f"   Using pre-set instrument ID: {iid}")
+        else:
+            # Fallback: find front month = instrument with most trades
+            front_month = max(by_instrument.items(), key=lambda x: x[1]['count'])
+            iid, data = front_month
+            # Set front month ID for live trade filtering (if not already set)
+            if front_month_instrument_id is None:
+                front_month_instrument_id = iid
+                print(f"   🎯 Auto-detected front month instrument ID: {iid}")
 
         pd_high = data['high']
         pd_low = data['low']
@@ -1560,13 +1565,17 @@ def fetch_all_ibs():
                 if not by_instrument:
                     continue
 
-                # Use front month (most trades)
-                front_month = max(by_instrument.items(), key=lambda x: x[1]['count'])
-                iid, ib_data = front_month
-
-                # Store front month ID if not set
-                if front_month_instrument_id is None:
-                    front_month_instrument_id = iid
+                # Use front_month_instrument_id if already set (GCJ26), otherwise pick by volume
+                if front_month_instrument_id and front_month_instrument_id in by_instrument:
+                    iid = front_month_instrument_id
+                    ib_data = by_instrument[iid]
+                else:
+                    # Fallback: use instrument with most trades
+                    front_month = max(by_instrument.items(), key=lambda x: x[1]['count'])
+                    iid, ib_data = front_month
+                    # Store front month ID if not set
+                    if front_month_instrument_id is None:
+                        front_month_instrument_id = iid
 
                 ib_high = ib_data['high']
                 ib_low = ib_data['low']
@@ -3656,13 +3665,17 @@ def fetch_current_session_history():
         if not by_instrument:
             return
 
-        # Use front month (most trades)
-        front_month = max(by_instrument.items(), key=lambda x: x[1]['count'])
-        iid, session_data = front_month
-
-        # Update front month ID if not set
-        if front_month_instrument_id is None:
-            front_month_instrument_id = iid
+        # Use front_month_instrument_id if already set (GCJ26), otherwise pick by volume
+        if front_month_instrument_id and front_month_instrument_id in by_instrument:
+            iid = front_month_instrument_id
+            session_data = by_instrument[iid]
+        else:
+            # Fallback: use front month (most trades)
+            front_month = max(by_instrument.items(), key=lambda x: x[1]['count'])
+            iid, session_data = front_month
+            # Update front month ID if not set
+            if front_month_instrument_id is None:
+                front_month_instrument_id = iid
 
         session_high = session_data['high']
         session_low = session_data['low']
