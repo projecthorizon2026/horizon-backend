@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.5.0"
+APP_VERSION = "15.5.1"
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -250,6 +250,56 @@ volume_history = deque(maxlen=10000)  # Reduced from 36000 to save memory
 price_history = deque(maxlen=500)  # Reduced from 1000
 last_session_id = None
 front_month_instrument_id = None  # Will be set from historical data
+active_month_instrument_id = None  # Will be resolved for GCJ26 specifically
+
+
+def resolve_active_month_instrument_id():
+    """Resolve the instrument_id for the active_month contract (e.g., GCJ26)"""
+    global active_month_instrument_id, front_month_instrument_id
+
+    if not HAS_DATABENTO or not API_KEY:
+        print("⚠️  Cannot resolve active month instrument ID - no Databento connection")
+        return None
+
+    config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
+    active_month = config.get('active_month', config['front_month'])  # e.g., GCJ26
+    symbol = config['symbol']  # e.g., GC.FUT
+
+    try:
+        print(f"🔍 Resolving instrument ID for {active_month}...")
+        client = db.Historical(key=API_KEY)
+
+        # Fetch recent trades to get instrument_id mapping
+        from datetime import datetime, timedelta
+        now = datetime.utcnow()
+        start = (now - timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        end = now.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+        data = client.timeseries.get_range(
+            dataset='GLBX.MDP3',
+            symbols=[symbol],
+            stype_in='parent',
+            schema='definition',
+            start=start,
+            end=end
+        )
+
+        # Look for the instrument definition matching our active_month
+        for record in data:
+            raw_sym = getattr(record, 'raw_symbol', '')
+            if raw_sym.startswith(active_month):
+                active_month_instrument_id = record.instrument_id
+                front_month_instrument_id = record.instrument_id  # Use for all filtering
+                print(f"✅ Resolved {active_month} to instrument ID: {active_month_instrument_id}")
+                return active_month_instrument_id
+
+        print(f"⚠️  Could not find {active_month} in definitions, will auto-detect from trades")
+        return None
+
+    except Exception as e:
+        print(f"⚠️  Error resolving instrument ID: {e}")
+        return None
+
 
 # ============================================
 # TPO / MARKET PROFILE STATE
@@ -1041,7 +1091,7 @@ def fetch_rollover_data():
             front_data = client.timeseries.get_range(
                 dataset='GLBX.MDP3',
                 schema='ohlcv-1d',
-                stype_in='raw_symbol',
+                stype_in='parent',
                 symbols=[front_month],
                 start=start_date,
                 end=end_date
@@ -1070,7 +1120,7 @@ def fetch_rollover_data():
             next_data = client.timeseries.get_range(
                 dataset='GLBX.MDP3',
                 schema='ohlcv-1d',
-                stype_in='raw_symbol',
+                stype_in='parent',
                 symbols=[next_month],
                 start=start_date,
                 end=end_date
@@ -1150,7 +1200,7 @@ def fetch_pd_levels():
     # Get contract config for active contract
     config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
     # Use active_month (specific contract like GCJ26) for accurate data
-    symbol = config.get('active_month', config['front_month'])
+    symbol = config['symbol']  # Parent symbol like GC.FUT
     price_min = config['price_min']
     price_max = config['price_max']
 
@@ -1204,7 +1254,7 @@ def fetch_pd_levels():
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='raw_symbol',  # Use raw_symbol for specific contracts like GCJ26
+            stype_in='parent',  # Use raw_symbol for specific contracts like GCJ26
             schema='trades',
             start=start_ts,
             end=end_ts
@@ -1296,7 +1346,7 @@ def fetch_all_ibs():
     # Get contract config for active contract
     config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
     # Use active_month (specific contract like GCJ26) for accurate data
-    symbol = config.get('active_month', config['front_month'])
+    symbol = config['symbol']  # Parent symbol like GC.FUT
     price_min = config['price_min']
     price_max = config['price_max']
 
@@ -1448,7 +1498,7 @@ def fetch_all_ibs():
                 data = client.timeseries.get_range(
                     dataset='GLBX.MDP3',
                     symbols=[symbol],
-                    stype_in='raw_symbol',
+                    stype_in='parent',
                     schema='trades',
                     start=utc_start,
                     end=utc_end
@@ -1512,7 +1562,7 @@ def fetch_all_ibs():
                             a_data = client.timeseries.get_range(
                                 dataset='GLBX.MDP3',
                                 symbols=[symbol],
-                                stype_in='raw_symbol',
+                                stype_in='parent',
                                 schema='trades',
                                 start=f"{today}T14:30:00Z",
                                 end=f"{today}T15:00:00Z"
@@ -1541,7 +1591,7 @@ def fetch_all_ibs():
                             b_data = client.timeseries.get_range(
                                 dataset='GLBX.MDP3',
                                 symbols=[symbol],
-                                stype_in='raw_symbol',
+                                stype_in='parent',
                                 schema='trades',
                                 start=f"{today}T15:00:00Z",
                                 end=f"{today}T15:30:00Z"
@@ -1607,7 +1657,7 @@ def fetch_full_day_data():
 
     try:
         config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
-        symbol = config.get('active_month', config['front_month'])
+        symbol = config['symbol']  # Parent symbol like GC.FUT
         price_min = config['price_min']
         price_max = config['price_max']
 
@@ -1636,7 +1686,7 @@ def fetch_full_day_data():
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='raw_symbol',
+            stype_in='parent',
             schema='trades',
             start=utc_start,
             end=utc_end
@@ -1789,7 +1839,7 @@ def fetch_todays_tpo_data():
 
     try:
         config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
-        symbol = config.get('active_month', config['front_month'])  # Specific contract like GCJ26
+        symbol = config['symbol']  # Parent symbol like GC.FUT  # Specific contract like GCJ26
         tick_size = config['tick_size']
         price_min = config['price_min']
         price_max = config['price_max']
@@ -1822,7 +1872,7 @@ def fetch_todays_tpo_data():
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='raw_symbol',
+            stype_in='parent',
             schema='trades',
             start=day_start_utc.strftime('%Y-%m-%dT%H:%M:%SZ'),
             end=now_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -2002,7 +2052,7 @@ def fetch_ended_sessions_ohlc():
         return
 
     config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
-    symbol = config.get('active_month', config['front_month'])
+    symbol = config['symbol']  # Parent symbol like GC.FUT
     price_min = config['price_min']
     price_max = config['price_max']
 
@@ -2065,7 +2115,7 @@ def fetch_ended_sessions_ohlc():
                 data = client.timeseries.get_range(
                     dataset='GLBX.MDP3',
                     symbols=[symbol],
-                    stype_in='raw_symbol',
+                    stype_in='parent',
                     schema='trades',
                     start=utc_start,
                     end=utc_end
@@ -2253,7 +2303,7 @@ def fetch_week_sessions_ohlc(week_id):
     end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
 
     config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
-    symbol = config.get('active_month', config['front_month'])
+    symbol = config['symbol']  # Parent symbol like GC.FUT
     price_min = config['price_min']
     price_max = config['price_max']
 
@@ -2309,7 +2359,7 @@ def fetch_week_sessions_ohlc(week_id):
                 data = client.timeseries.get_range(
                     dataset='GLBX.MDP3',
                     symbols=[symbol],
-                    stype_in='raw_symbol',
+                    stype_in='parent',
                     schema='trades',
                     start=start_utc,
                     end=end_utc
@@ -2521,7 +2571,7 @@ def fetch_historic_tpo_profiles(days=40):
         # Get contract config
         config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
         # Use specific contract symbol (active_month like GCJ26)
-        symbol = config.get('active_month', config['front_month'])
+        symbol = config['symbol']  # Parent symbol like GC.FUT
         tick_size = config['tick_size']
         price_min = config['price_min']
         price_max = config['price_max']
@@ -2541,7 +2591,7 @@ def fetch_historic_tpo_profiles(days=40):
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='raw_symbol',  # Use parent for more historical data
+            stype_in='parent',  # Use parent for more historical data
             schema='ohlcv-1h',  # 1-hour bars
             start=start_utc,
             end=end_utc
@@ -3070,7 +3120,7 @@ def fetch_session_history(days=50, force_refresh=False):
         return get_session_history_fast()
 
     config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
-    symbol = config.get('active_month', config['front_month'])
+    symbol = config['symbol']  # Parent symbol like GC.FUT
     price_min = config['price_min']
     price_max = config['price_max']
 
@@ -3122,7 +3172,7 @@ def fetch_session_history(days=50, force_refresh=False):
             data = client.timeseries.get_range(
                 dataset='GLBX.MDP3',
                 symbols=[symbol],
-                stype_in='raw_symbol',
+                stype_in='parent',
                 schema='trades',
                 start=utc_start,
                 end=utc_end
@@ -3142,7 +3192,7 @@ def fetch_session_history(days=50, force_refresh=False):
                 data = client.timeseries.get_range(
                     dataset='GLBX.MDP3',
                     symbols=[symbol],
-                    stype_in='raw_symbol',
+                    stype_in='parent',
                     schema='trades',
                     start=utc_start,
                     end=utc_end
@@ -3282,7 +3332,7 @@ def fetch_historical_sessions_ohlc(days=6):
         return None
 
     config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
-    symbol = config.get('active_month', config['front_month'])
+    symbol = config['symbol']  # Parent symbol like GC.FUT
     price_min = config['price_min']
     price_max = config['price_max']
 
@@ -3344,7 +3394,7 @@ def fetch_historical_sessions_ohlc(days=6):
                 data = client.timeseries.get_range(
                     dataset='GLBX.MDP3',
                     symbols=[symbol],
-                    stype_in='raw_symbol',
+                    stype_in='parent',
                     schema='trades',
                     start=start_utc,
                     end=end_utc
@@ -3436,7 +3486,7 @@ def fetch_current_session_history():
         return
 
     config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
-    symbol = config.get('active_month', config['front_month'])
+    symbol = config['symbol']  # Parent symbol like GC.FUT
     price_min = config['price_min']
     price_max = config['price_max']
 
@@ -3518,7 +3568,7 @@ def fetch_current_session_history():
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='raw_symbol',
+            stype_in='parent',
             schema='trades',
             start=utc_start,
             end=utc_end
@@ -3635,7 +3685,7 @@ def fetch_historical_candle_volumes():
         return
 
     config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
-    symbol = config.get('active_month', config['front_month'])
+    symbol = config['symbol']  # Parent symbol like GC.FUT
     price_min = config['price_min']
     price_max = config['price_max']
 
@@ -3670,7 +3720,7 @@ def fetch_historical_candle_volumes():
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=[symbol],
-            stype_in='raw_symbol',
+            stype_in='parent',
             schema='trades',
             start=utc_start_str,
             end=utc_end_str
@@ -3905,6 +3955,10 @@ def start_stream():
 
     config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
 
+    # Resolve the active_month instrument ID first (for GCJ26 filtering)
+    print(f"\n🎯 Resolving active month instrument ID...")
+    resolve_active_month_instrument_id()
+
     # Fetch historical data for this contract
     print(f"\n📊 Fetching historical data for {config['name']}...")
     fetch_pd_levels()
@@ -3957,7 +4011,7 @@ def start_stream():
     config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
     # Use active_month (specific contract like GCJ26) instead of parent symbol (GC.FUT)
     # This ensures we get the exact contract we're trading
-    symbol = config.get('active_month', config['front_month'])
+    symbol = config['symbol']  # Parent symbol like GC.FUT
 
     # If stream was stopped during historical fetch, don't connect to live
     if not stream_running:
@@ -3978,7 +4032,7 @@ def start_stream():
             live_client.subscribe(
                 dataset='GLBX.MDP3',
                 schema='trades',
-                stype_in='raw_symbol',  # Use raw_symbol for specific contracts like GCJ26
+                stype_in='parent',  # Use raw_symbol for specific contracts like GCJ26
                 symbols=[symbol]
             )
 
