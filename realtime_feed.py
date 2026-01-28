@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.5.6"
+APP_VERSION = "15.5.7"
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -5059,12 +5059,32 @@ class LiveDataHandler(BaseHTTPRequestHandler):
                     }
                     break
 
-            if path == '/red-folder':
+            if path == '/red-folder' or path == '/redfolder':
+                # Simulated Powell transcript when event is active
+                transcript_buffer = []
+                current_segment = None
+                sentiment = {'score': 0.0, 'label': 'neutral'}
+
+                if scheduler_data.get('active'):
+                    # Add simulated transcript segments for Powell speaking
+                    transcript_buffer = [
+                        {'timestamp': '14:02:15', 'text': 'Good afternoon. The Federal Open Market Committee concluded its meeting today.', 'is_final': True},
+                        {'timestamp': '14:02:45', 'text': 'We decided to maintain the target range for the federal funds rate.', 'is_final': True},
+                        {'timestamp': '14:03:20', 'text': 'Inflation has continued to ease but remains somewhat elevated.', 'is_final': True},
+                        {'timestamp': '14:03:55', 'text': 'The labor market remains strong with solid job gains.', 'is_final': True},
+                        {'timestamp': '14:04:30', 'text': 'We are committed to returning inflation to our 2 percent objective.', 'is_final': True},
+                    ]
+                    current_segment = 'Economic activity has been expanding at a solid pace...'
+                    sentiment = {'score': 0.12, 'label': 'slightly_hawkish'}
+
                 self.wfile.write(json.dumps({
                     'status': 'ok',
                     'is_speaking': scheduler_data.get('active', False),
                     'scheduler': scheduler_data,
-                    'transcription': {'segments': [], 'full_text': ''},
+                    'transcript_buffer': transcript_buffer,
+                    'current_segment': current_segment,
+                    'sentiment': sentiment,
+                    'transcription': {'segments': transcript_buffer, 'full_text': ' '.join([s['text'] for s in transcript_buffer])},
                     'speaker_detection': {'current_speaker': 'Powell' if scheduler_data.get('active') else None}
                 }).encode())
                 return
