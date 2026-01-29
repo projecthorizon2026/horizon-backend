@@ -21251,10 +21251,10 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
               <div style={{ fontSize: 9, color: '#666', marginTop: 2 }}>
                 {metrics.rollover.front_month_name || metrics.contract_name || ''}
               </div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#fff', marginTop: 8, fontFamily: 'monospace' }}>
-                {(metrics.rollover.front_month_oi || 0).toLocaleString()}
+              <div style={{ fontSize: 18, fontWeight: 700, color: metrics.rollover.front_month_oi > 0 ? '#fff' : '#555', marginTop: 8, fontFamily: 'monospace' }}>
+                {metrics.rollover.front_month_oi > 0 ? metrics.rollover.front_month_oi.toLocaleString() : '—'}
               </div>
-              <div style={{ fontSize: 9, color: '#888' }}>Open Interest</div>
+              <div style={{ fontSize: 9, color: '#888' }}>{metrics.rollover.front_month_oi > 0 ? 'Open Interest' : 'OI @ Settlement'}</div>
             </div>
 
             {/* Arrow & Ratio */}
@@ -21287,10 +21287,10 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
               <div style={{ fontSize: 9, color: '#666', marginTop: 2 }}>
                 {metrics.rollover.next_month_name || ''}
               </div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#fff', marginTop: 8, fontFamily: 'monospace' }}>
-                {(metrics.rollover.next_month_oi || 0).toLocaleString()}
+              <div style={{ fontSize: 18, fontWeight: 700, color: metrics.rollover.next_month_oi > 0 ? '#fff' : '#555', marginTop: 8, fontFamily: 'monospace' }}>
+                {metrics.rollover.next_month_oi > 0 ? metrics.rollover.next_month_oi.toLocaleString() : '—'}
               </div>
-              <div style={{ fontSize: 9, color: '#888' }}>Open Interest</div>
+              <div style={{ fontSize: 9, color: '#888' }}>{metrics.rollover.next_month_oi > 0 ? 'Open Interest' : 'OI @ Settlement'}</div>
             </div>
           </div>
 

@@ -136,8 +136,7 @@ HIGH_IMPACT_EVENTS = [
 
     # ============= 2026 EVENTS =============
     # FOMC Press Conferences (2:30 PM ET) - CRITICAL
-    (2026, 1, 29, 13, 0, "Fed Chair Powell Speaks", "CRITICAL"),  # Powell speaking today
-    (2026, 1, 28, 14, 30, "FOMC Press Conference", "CRITICAL"),
+    (2026, 1, 29, 14, 30, "FOMC Press Conference", "CRITICAL"),  # Jan 29 - Powell speaks
     (2026, 3, 18, 14, 30, "FOMC Press Conference", "CRITICAL"),
     (2026, 5, 6, 14, 30, "FOMC Press Conference", "CRITICAL"),
     (2026, 6, 17, 14, 30, "FOMC Press Conference", "CRITICAL"),
@@ -985,47 +984,58 @@ def find_fed_live_stream() -> str:
 def check_fed_schedule() -> dict:
     """
     Check if we're within a high-impact event window
-    Returns event info if within 5 minutes before or 2 hours after scheduled start
+    Returns event info if within 24 hours before or 6 hours after scheduled start
+    Times are stored in ET - server runs in UTC, so we add 5 hours for conversion
     """
-    now = datetime.now()
+    # Get current time in UTC (Railway runs in UTC)
+    now_naive = datetime.utcnow()
 
     # Check for active events
     for event in HIGH_IMPACT_EVENTS:
         try:
             year, month, day, hour, minute, event_name = event[:6]
             impact_level = event[6] if len(event) > 6 else "HIGH"
-            event_time = datetime(year, month, day, hour, minute)
 
-            # Check if within window: 5 min before to 2 hours after
-            window_start = event_time - timedelta(minutes=5)
-            window_end = event_time + timedelta(hours=2)
+            # Event time is stored as ET, convert to UTC by adding 5 hours
+            # (ET is UTC-5, so 14:30 ET = 19:30 UTC)
+            event_time_et = datetime(year, month, day, hour, minute)
+            event_time_utc = event_time_et + timedelta(hours=5)
 
-            if window_start <= now <= window_end:
+            # Use UTC time for comparison
+            now_naive = datetime.utcnow()
+
+            # Check if within window: 24 hours before to 6 hours after (wide window for visibility)
+            window_start = event_time_utc - timedelta(hours=24)
+            window_end = event_time_utc + timedelta(hours=6)
+
+            if window_start <= now_naive <= window_end:
                 return {
                     'active': True,
                     'event_name': event_name,
                     'impact_level': impact_level,
-                    'scheduled_time': event_time.strftime('%Y-%m-%d %H:%M ET'),
-                    'minutes_until': int((event_time - now).total_seconds() / 60),
-                    'status': 'upcoming' if now < event_time else 'in_progress'
+                    'scheduled_time': event_time_et.strftime('%Y-%m-%d %H:%M ET'),
+                    'minutes_until': int((event_time_utc - now_naive).total_seconds() / 60),
+                    'status': 'upcoming' if now_naive < event_time_utc else 'in_progress'
                 }
         except (ValueError, IndexError):
             continue
 
     # Find next 3 upcoming events
     upcoming = []
+    now_naive = datetime.utcnow()
     for event in HIGH_IMPACT_EVENTS:
         try:
             year, month, day, hour, minute, event_name = event[:6]
             impact_level = event[6] if len(event) > 6 else "HIGH"
-            event_time = datetime(year, month, day, hour, minute)
-            if event_time > now:
+            event_time_et = datetime(year, month, day, hour, minute)
+            event_time_utc = event_time_et + timedelta(hours=5)  # Convert ET to UTC
+            if event_time_utc > now_naive:
                 upcoming.append({
                     'event_name': event_name,
                     'impact_level': impact_level,
-                    'event_time': event_time,
-                    'formatted_time': event_time.strftime('%Y-%m-%d %H:%M ET'),
-                    'days_until': (event_time - now).days
+                    'event_time': event_time_utc,
+                    'formatted_time': event_time_et.strftime('%Y-%m-%d %H:%M ET'),
+                    'days_until': (event_time_utc - now_naive).days
                 })
         except (ValueError, IndexError):
             continue

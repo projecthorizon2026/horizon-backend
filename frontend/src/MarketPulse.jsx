@@ -5,6 +5,7 @@ import { useState } from 'react';
 
 const MarketPulse = ({ gexData, currentPrice }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [showDeepAnalysis, setShowDeepAnalysis] = useState(false);
 
   const gammaRegime = gexData?.gamma_regime || 'UNKNOWN';
   const totalGex = gexData?.total_gex || 0;
@@ -289,22 +290,136 @@ const MarketPulse = ({ gexData, currentPrice }) => {
             <div style={{ fontSize: 11, color: colors.textMuted }}>Market Structure & 0DTE Strategy</div>
           </div>
         </div>
-        <button style={{
-          padding: '10px 20px',
-          background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
-          border: 'none',
-          borderRadius: 8,
-          color: '#fff',
-          fontSize: 12,
-          fontWeight: 600,
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8
-        }}>
-          👁 VIEW ANALYSIS
+        <button
+          onClick={() => setShowDeepAnalysis(!showDeepAnalysis)}
+          style={{
+            padding: '10px 20px',
+            background: showDeepAnalysis
+              ? 'rgba(168,85,247,0.3)'
+              : 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+            border: showDeepAnalysis ? '1px solid #a855f7' : 'none',
+            borderRadius: 8,
+            color: '#fff',
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8
+          }}
+        >
+          {showDeepAnalysis ? '✕ CLOSE' : '👁 VIEW ANALYSIS'}
         </button>
       </div>
+
+      {/* AI Deep Analysis Expanded Section */}
+      {showDeepAnalysis && (
+        <div style={{
+          marginTop: 16,
+          padding: 20,
+          background: 'linear-gradient(135deg, rgba(168,85,247,0.1) 0%, rgba(124,58,237,0.1) 100%)',
+          border: '1px solid rgba(168,85,247,0.3)',
+          borderRadius: 12
+        }}>
+          <div style={{ fontSize: 14, color: colors.purple, fontWeight: 600, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>🤖</span> AI Market Structure Analysis
+          </div>
+
+          {/* Market Context */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, color: colors.textMuted, marginBottom: 8, letterSpacing: '0.05em' }}>MARKET CONTEXT</div>
+            <div style={{ fontSize: 13, color: colors.text, lineHeight: 1.7 }}>
+              {gammaRegime === 'NEGATIVE' ? (
+                <>
+                  <p style={{ margin: '0 0 12px 0' }}>
+                    <span style={{ color: colors.red, fontWeight: 600 }}>⚠️ High Volatility Environment:</span> The market is in a negative gamma regime,
+                    meaning dealers are short gamma and must hedge in the same direction as price moves. This creates a
+                    <span style={{ color: colors.amber }}> feedback loop that amplifies volatility</span>.
+                  </p>
+                  <p style={{ margin: '0 0 12px 0' }}>
+                    <span style={{ color: colors.cyan, fontWeight: 600 }}>Key Implications:</span>
+                    <br/>• Breakouts tend to extend further than expected
+                    <br/>• Mean reversion strategies carry higher risk
+                    <br/>• Gamma squeezes can occur at key levels
+                    <br/>• Stop runs are more likely
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p style={{ margin: '0 0 12px 0' }}>
+                    <span style={{ color: colors.green, fontWeight: 600 }}>✓ Stable Environment:</span> The market is in a positive gamma regime,
+                    meaning dealers are long gamma and hedge against price moves. This creates a
+                    <span style={{ color: colors.green }}> dampening effect that reduces volatility</span>.
+                  </p>
+                  <p style={{ margin: '0 0 12px 0' }}>
+                    <span style={{ color: colors.cyan, fontWeight: 600 }}>Key Implications:</span>
+                    <br/>• Price tends to revert to mean (VWAP, HVL)
+                    <br/>• Range-bound trading strategies favored
+                    <br/>• Breakout attempts often fade
+                    <br/>• Options premium selling has edge
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* 0DTE Strategy */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, color: colors.textMuted, marginBottom: 8, letterSpacing: '0.05em' }}>0DTE STRATEGY RECOMMENDATION</div>
+            <div style={{
+              padding: 16,
+              background: gammaRegime === 'NEGATIVE' ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)',
+              border: `1px solid ${gammaRegime === 'NEGATIVE' ? 'rgba(239,68,68,0.3)' : 'rgba(34,197,94,0.3)'}`,
+              borderRadius: 8
+            }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: gammaRegime === 'NEGATIVE' ? colors.red : colors.green, marginBottom: 8 }}>
+                {gammaRegime === 'NEGATIVE' ? '📉 TREND FOLLOWING / BREAKOUT' : '📊 MEAN REVERSION / RANGE'}
+              </div>
+              <div style={{ fontSize: 12, color: colors.text, lineHeight: 1.6 }}>
+                {gammaRegime === 'NEGATIVE' ? (
+                  <>
+                    • Trade with momentum, not against it<br/>
+                    • Use wider stops due to increased volatility<br/>
+                    • Consider strangles/straddles for directional plays<br/>
+                    • Watch for gamma squeeze at {zeroGamma.toFixed(2)} (Zero Gamma)
+                  </>
+                ) : (
+                  <>
+                    • Fade moves away from VWAP and HVL<br/>
+                    • Iron condors and butterflies have edge<br/>
+                    • Tighter stops acceptable in low-vol environment<br/>
+                    • Expect reversion to {hvl > 0 ? hvl.toFixed(2) : zeroGamma.toFixed(2)} (HVL/ZG)
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Key Levels */}
+          <div>
+            <div style={{ fontSize: 11, color: colors.textMuted, marginBottom: 8, letterSpacing: '0.05em' }}>KEY GAMMA LEVELS</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+              <div style={{ padding: 12, background: 'rgba(0,0,0,0.3)', borderRadius: 8, textAlign: 'center' }}>
+                <div style={{ fontSize: 10, color: colors.textMuted, marginBottom: 4 }}>ZERO GAMMA</div>
+                <div style={{ fontSize: 16, fontWeight: 600, color: colors.amber }}>${zeroGamma.toFixed(2)}</div>
+                <div style={{ fontSize: 9, color: currentPrice > zeroGamma ? colors.green : colors.red }}>
+                  {currentPrice > zeroGamma ? '▲' : '▼'} {Math.abs(distanceFromZG)} pts
+                </div>
+              </div>
+              <div style={{ padding: 12, background: 'rgba(0,0,0,0.3)', borderRadius: 8, textAlign: 'center' }}>
+                <div style={{ fontSize: 10, color: colors.textMuted, marginBottom: 4 }}>HVL</div>
+                <div style={{ fontSize: 16, fontWeight: 600, color: colors.cyan }}>${hvl > 0 ? hvl.toFixed(2) : '--'}</div>
+                <div style={{ fontSize: 9, color: colors.textMuted }}>High Volume Level</div>
+              </div>
+              <div style={{ padding: 12, background: 'rgba(0,0,0,0.3)', borderRadius: 8, textAlign: 'center' }}>
+                <div style={{ fontSize: 10, color: colors.textMuted, marginBottom: 4 }}>NET GEX</div>
+                <div style={{ fontSize: 16, fontWeight: 600, color: totalGex < 0 ? colors.red : colors.green }}>{totalGex.toFixed(2)}B</div>
+                <div style={{ fontSize: 9, color: colors.textMuted }}>{totalGex < 0 ? 'Dealer Short Gamma' : 'Dealer Long Gamma'}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
