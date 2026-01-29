@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.9.3"
+APP_VERSION = "15.9.4"  # Memory optimized - reduced history buffers
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -247,9 +247,9 @@ state = {
 rollover_last_fetch = 0
 ROLLOVER_FETCH_INTERVAL = 300  # 5 minutes
 
-delta_history = deque(maxlen=10000)  # Reduced from 36000 to save memory
-volume_history = deque(maxlen=10000)  # Reduced from 36000 to save memory
-price_history = deque(maxlen=500)  # Reduced from 1000
+delta_history = deque(maxlen=500)  # Reduced to save memory on Railway
+volume_history = deque(maxlen=500)  # Reduced to save memory on Railway
+price_history = deque(maxlen=100)  # Reduced to save memory on Railway
 last_session_id = None
 front_month_instrument_id = None  # Will be set from historical data
 active_month_instrument_id = None  # Will be resolved for GCJ26 specifically
@@ -3825,7 +3825,7 @@ def fetch_historical_candle_volumes():
 
             # Filter out current candle and store up to 200 historical candles
             # (Frontend shows 30, but stores more for scrolling/overflow)
-            max_history = 200
+            max_history = 100  # Reduced from 200 to save memory
             history = []
             for candle_ts, candle_data in sorted_candles:
                 if candle_ts < current_candle_start:  # Only completed candles
@@ -3998,19 +3998,16 @@ def start_stream():
     load_all_caches()
 
     # Pre-fetch session history in background for VSI page (so it's cached)
+    # MEMORY OPTIMIZED: Reduced from 50 days to 10 days, skip historical weeks
     def prefetch_session_history():
         print("📊 Pre-fetching VSI session history (background)...")
-        fetch_session_history(days=50, force_refresh=True)  # Fetch max days
-        print("✅ VSI session history cached (50 days)")
+        fetch_session_history(days=10, force_refresh=True)  # Reduced from 50 to save memory
+        print("✅ VSI session history cached (10 days)")
         # Also fetch 6-day historical sessions OHLC for candle visualization (shows 5 after skipping today)
         print("📊 Pre-fetching 6-day historical sessions OHLC (background)...")
         fetch_historical_sessions_ohlc(days=6)
-        # Fetch 'current' week using calendar week logic (Monday to today)
-        print("📊 Fetching current calendar week...")
-        fetch_week_sessions_ohlc('current')
-        # Fetch all historical weeks (5 weeks back)
-        print("📅 Pre-fetching 5 historical weeks...")
-        fetch_all_historical_weeks()
+        # Skip historical weeks to save memory - fetch on demand instead
+        print("⚡ Skipping historical weeks prefetch to save memory")
 
     prefetch_thread = threading.Thread(target=prefetch_session_history, daemon=True)
     prefetch_thread.start()
