@@ -1672,16 +1672,17 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
   // Session POC from TPO data
   const sessionPOC = metrics?.tpo_poc > 0 ? { price: metrics.tpo_poc, name: `${currentSessionName} POC`, color: '#ffaa00' } : null;
 
-  // Fibonacci levels calculated from day session range
+  // Fibonacci retracement levels from HIGH (0% = high, 100% = low)
+  // Matches Live Metrics calculation - retracement measures pullback FROM the high
   const fibDayHigh = metrics?.dayHigh || metrics?.day_high || 0;
   const fibDayLow = metrics?.dayLow || metrics?.day_low || 0;
   const fibDayRange = fibDayHigh - fibDayLow;
   const fibLevels = fibDayRange > 0 ? [
-    { price: fibDayLow + (fibDayRange * 0.786), name: 'Fib 78.6%', color: '#ff6b6b' },
-    { price: fibDayLow + (fibDayRange * 0.618), name: 'Fib 61.8%', color: '#ffd93d' },
-    { price: fibDayLow + (fibDayRange * 0.5), name: 'Fib 50%', color: '#f97316' },
-    { price: fibDayLow + (fibDayRange * 0.382), name: 'Fib 38.2%', color: '#00bcd4' },
-    { price: fibDayLow + (fibDayRange * 0.236), name: 'Fib 23.6%', color: '#00ff88' },
+    { price: fibDayHigh - (fibDayRange * 0.236), name: 'Fib 23.6%', color: '#ff6b6b' },
+    { price: fibDayHigh - (fibDayRange * 0.382), name: 'Fib 38.2%', color: '#ffd93d' },
+    { price: fibDayHigh - (fibDayRange * 0.5), name: 'Fib 50%', color: '#f97316' },
+    { price: fibDayHigh - (fibDayRange * 0.618), name: 'Fib 61.8%', color: '#00bcd4' },
+    { price: fibDayHigh - (fibDayRange * 0.786), name: 'Fib 78.6%', color: '#10B981' },
   ] : [];
 
   const referenceLevels = [
