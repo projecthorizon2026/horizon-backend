@@ -2204,7 +2204,7 @@ def classify_day_type():
         scores['non_trend'] += 15
     if range_ext_pct < 30:
         scores['non_trend'] += 30
-    if ab_overlap > 60:
+    if ab_overlap is not None and ab_overlap > 60:
         scores['non_trend'] += 20
     if day['profile_shape'] == 'D':
         scores['non_trend'] += 15
@@ -2224,7 +2224,7 @@ def classify_day_type():
         scores['normal'] += 25
     if range_ext_pct < 50:
         scores['normal'] += 20
-    if ab_overlap > 50:
+    if ab_overlap is not None and ab_overlap > 50:
         scores['normal'] += 15
 
     # DOUBLE DISTRIBUTION: Two distributions separated by single prints
@@ -2238,7 +2238,7 @@ def classify_day_type():
     # NEUTRAL DAY: Extension on BOTH sides of IB
     if extension_up > 5 and extension_down > 5:
         scores['neutral'] += 25
-    if ab_overlap > 50:
+    if ab_overlap is not None and ab_overlap > 50:
         scores['neutral'] += 15
     if range_ext_pct < 100:
         scores['neutral'] += 15
@@ -2359,6 +2359,162 @@ def classify_open_type():
     day['open_type'] = open_type
     day['open_type_confidence'] = confidence
     day['open_direction'] = dominant_dir
+
+def detect_swing_points(candle_history, lookback=50, swing_strength=1):
+    """
+    Detect recent swing high and swing low using 3-candle structure.
+
+    3-candle structure:
+    - Swing HIGH: candle high > both left neighbor AND right neighbor highs
+    - Swing LOW: candle low < both left neighbor AND right neighbor lows
+
+    The function finds the MOST RECENT completed swing (high-low pair) and determines:
+    - UP swing: swing low formed BEFORE swing high (price moved up) → extensions ABOVE high
+    - DOWN swing: swing high formed BEFORE swing low (price moved down) → extensions BELOW low
+
+    Args:
+        candle_history: List of candles with 'high', 'low' keys
+        lookback: Number of candles to analyze (default 50 for more swing history)
+        swing_strength: Candles on each side to confirm (1 = 3-candle structure)
+
+    Returns:
+        dict with swing_high, swing_low, swing_direction, and extension info
+    """
+    if not candle_history or len(candle_history) < 5:
+        return {
+            'swing_high': 0, 'swing_low': 0, 'swing_direction': 'neutral',
+            'swing_high_idx': -1, 'swing_low_idx': -1,
+            'swing_type': 'none', 'extensions_direction': 'none'
+        }
+
+    # Get recent candles (most recent last)
+    candles = candle_history[-lookback:] if len(candle_history) >= lookback else candle_history
+
+    # Find ALL confirmed swing points with their indices
+    all_swings = []  # List of (index, price, type) where type is 'high' or 'low'
+
+    # Use swing_strength=1 for 3-candle structure (1 candle on each side)
+    for i in range(swing_strength, len(candles) - swing_strength):
+        candle = candles[i]
+        high = candle.get('high') or candle.get('price_high') or 0
+        low = candle.get('low') or candle.get('price_low') or 0
+
+        # Skip if values are None or invalid
+        if high is None or low is None or high <= 0 or low <= 0 or low >= 999999:
+            continue
+
+        # Check for 3-candle swing high (high > both neighbors)
+        is_swing_high = True
+        for j in range(1, swing_strength + 1):
+            left_high = candles[i - j].get('high') or candles[i - j].get('price_high') or 0
+            right_high = candles[i + j].get('high') or candles[i + j].get('price_high') or 0
+            if left_high is None or right_high is None or left_high <= 0 or right_high <= 0:
+                is_swing_high = False
+                break
+            if high <= left_high or high <= right_high:
+                is_swing_high = False
+                break
+        if is_swing_high:
+            all_swings.append((i, high, 'high'))
+
+        # Check for 3-candle swing low (low < both neighbors)
+        is_swing_low = True
+        for j in range(1, swing_strength + 1):
+            left_low = candles[i - j].get('low') or candles[i - j].get('price_low') or 0
+            right_low = candles[i + j].get('low') or candles[i + j].get('price_low') or 0
+            if left_low is None or right_low is None or left_low <= 0 or right_low <= 0 or left_low >= 999999 or right_low >= 999999:
+                is_swing_low = False
+                break
+            if low >= left_low or low >= right_low:
+                is_swing_low = False
+                break
+        if is_swing_low:
+            all_swings.append((i, low, 'low'))
+
+    # Sort swings by index (chronological order)
+    all_swings.sort(key=lambda x: x[0])
+
+    # Find the last two different swing types to form a complete swing
+    # A complete swing needs both a high and low point
+    if len(all_swings) < 2:
+        # Not enough swings, fallback to lookback high/low
+        max_high = 0
+        max_idx = -1
+        min_low = 999999
+        min_idx = -1
+        for i, c in enumerate(candles):
+            h = c.get('high') or c.get('price_high') or 0
+            l = c.get('low') or c.get('price_low') or 0
+            if h is not None and h > max_high:
+                max_high = h
+                max_idx = i
+            if l is not None and 0 < l < min_low:
+                min_low = l
+                min_idx = i
+
+        swing_direction = 'up' if max_idx > min_idx else 'down' if min_idx > max_idx else 'neutral'
+        return {
+            'swing_high': round(max_high, 2) if max_high > 0 else 0,
+            'swing_low': round(min_low, 2) if min_low < 999999 else 0,
+            'swing_direction': swing_direction,
+            'swing_high_idx': max_idx,
+            'swing_low_idx': min_idx,
+            'swing_type': 'fallback',
+            'extensions_direction': 'up' if swing_direction == 'up' else 'down'
+        }
+
+    # Get the most recent swing
+    most_recent = all_swings[-1]
+
+    # Find the most recent swing of the OPPOSITE type to form a complete swing pair
+    second_most_recent = None
+    for swing in reversed(all_swings[:-1]):
+        if swing[2] != most_recent[2]:  # Different type
+            second_most_recent = swing
+            break
+
+    if not second_most_recent:
+        # All swings are same type, use the two most recent of same type boundaries
+        swing_high = most_recent[1] if most_recent[2] == 'high' else 0
+        swing_low = most_recent[1] if most_recent[2] == 'low' else 0
+        return {
+            'swing_high': round(swing_high, 2),
+            'swing_low': round(swing_low, 2),
+            'swing_direction': 'up' if most_recent[2] == 'high' else 'down',
+            'swing_high_idx': most_recent[0] if most_recent[2] == 'high' else -1,
+            'swing_low_idx': most_recent[0] if most_recent[2] == 'low' else -1,
+            'swing_type': 'partial',
+            'extensions_direction': 'up' if most_recent[2] == 'high' else 'down'
+        }
+
+    # Now we have two swings that form a complete swing (high + low)
+    # Determine which came first to know the swing direction
+    if most_recent[2] == 'high':
+        # Most recent is HIGH, second is LOW → UP swing (low to high)
+        swing_high = most_recent[1]
+        swing_low = second_most_recent[1]
+        swing_high_idx = most_recent[0]
+        swing_low_idx = second_most_recent[0]
+        swing_direction = 'up'
+        extensions_direction = 'up'  # Extensions above the high
+    else:
+        # Most recent is LOW, second is HIGH → DOWN swing (high to low)
+        swing_high = second_most_recent[1]
+        swing_low = most_recent[1]
+        swing_high_idx = second_most_recent[0]
+        swing_low_idx = most_recent[0]
+        swing_direction = 'down'
+        extensions_direction = 'down'  # Extensions below the low
+
+    return {
+        'swing_high': round(swing_high, 2),
+        'swing_low': round(swing_low, 2),
+        'swing_direction': swing_direction,
+        'swing_high_idx': swing_high_idx,
+        'swing_low_idx': swing_low_idx,
+        'swing_type': 'confirmed',
+        'extensions_direction': extensions_direction
+    }
 
 def reset_session_profile(session_key):
     """Reset a single session profile"""
@@ -9724,8 +9880,8 @@ class LiveDataHandler(BaseHTTPRequestHandler):
                     (2026, 1, 23, 8, 30, "Initial Jobless Claims", "MEDIUM", "215K", "210K"),
                     (2026, 1, 24, 10, 0, "Existing Home Sales (Dec)", "MEDIUM", "4.15M", "4.09M"),
                     (2026, 1, 27, 10, 0, "New Home Sales (Dec)", "MEDIUM", "670K", "664K"),
-                    (2026, 1, 29, 14, 0, "FOMC Rate Decision", "CRITICAL", "4.25-4.50%", "4.25-4.50%"),
-                    (2026, 1, 29, 14, 30, "FOMC Press Conference", "CRITICAL", "", ""),
+                    (2026, 1, 28, 14, 0, "FOMC Rate Decision", "CRITICAL", "4.25-4.50%", "4.25-4.50%"),
+                    (2026, 1, 28, 14, 30, "FOMC Press Conference", "CRITICAL", "", ""),
                     (2026, 1, 30, 8, 30, "GDP (Q4 Advance)", "HIGH", "2.5%", "3.1%"),
                     (2026, 1, 30, 8, 30, "Initial Jobless Claims", "MEDIUM", "218K", "215K"),
                     (2026, 1, 31, 8, 30, "Core PCE Price Index (Dec)", "CRITICAL", "0.2%", "0.1%"),
@@ -10426,6 +10582,9 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             'volume_15m': s['volume_15m'],
             'volume_30m': s['volume_30m'],
             'volume_1h': s['volume_1h'],
+
+            # Swing Detection (for Fibonacci retracement)
+            'swing': detect_swing_points(s['volume_5m'].get('history', []), lookback=30, swing_strength=2),
 
             # Big Trades (Order Flow)
             'big_trades': s.get('big_trades', []),

@@ -1719,42 +1719,97 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
   const isEveningSession = etTimeVal >= 1800 || etTimeVal < 300; // 18:00 ET to 03:00 ET next day
   const allIBLevels = [
     // Japan IB (19:00-20:00 ET) - (pd) if before 19:00 in evening, or anytime after midnight until Japan IB ends
-    metrics?.ibs?.japan?.high > 0 && { price: metrics.ibs.japan.high, name: etTimeVal < 1900 && etTimeVal >= 1800 ? 'Japan IB High (pd)' : 'Japan IB High', color: '#9370DB' },
-    metrics?.ibs?.japan?.low > 0 && metrics?.ibs?.japan?.low < 999999 && { price: metrics.ibs.japan.low, name: etTimeVal < 1900 && etTimeVal >= 1800 ? 'Japan IB Low (pd)' : 'Japan IB Low', color: '#9370DB' },
-    metrics?.ibs?.japan?.poc > 0 && { price: metrics.ibs.japan.poc, name: etTimeVal < 1900 && etTimeVal >= 1800 ? 'Japan IB POC (pd)' : 'Japan IB POC', color: '#B8A3D9' },
+    metrics?.ibs?.japan?.high > 0 && { price: metrics.ibs.japan.high, name: etTimeVal < 1900 && etTimeVal >= 1800 ? '(pd) Japan IB High' : 'Japan IB High', color: '#9370DB' },
+    metrics?.ibs?.japan?.low > 0 && metrics?.ibs?.japan?.low < 999999 && { price: metrics.ibs.japan.low, name: etTimeVal < 1900 && etTimeVal >= 1800 ? '(pd) Japan IB Low' : 'Japan IB Low', color: '#9370DB' },
+    metrics?.ibs?.japan?.poc > 0 && { price: metrics.ibs.japan.poc, name: etTimeVal < 1900 && etTimeVal >= 1800 ? '(pd) Japan IB POC' : 'Japan IB POC', color: '#B8A3D9' },
     // London IB (03:00-04:00 ET) - (pd) if before 03:00
-    metrics?.ibs?.london?.high > 0 && { price: metrics.ibs.london.high, name: etTimeVal < 300 || etTimeVal >= 1800 ? 'London IB High (pd)' : 'London IB High', color: '#a855f7' },
-    metrics?.ibs?.london?.low > 0 && metrics?.ibs?.london?.low < 999999 && { price: metrics.ibs.london.low, name: etTimeVal < 300 || etTimeVal >= 1800 ? 'London IB Low (pd)' : 'London IB Low', color: '#a855f7' },
-    metrics?.ibs?.london?.poc > 0 && { price: metrics.ibs.london.poc, name: etTimeVal < 300 || etTimeVal >= 1800 ? 'London IB POC (pd)' : 'London IB POC', color: '#C084FC' },
+    metrics?.ibs?.london?.high > 0 && { price: metrics.ibs.london.high, name: etTimeVal < 300 || etTimeVal >= 1800 ? '(pd) London IB High' : 'London IB High', color: '#a855f7' },
+    metrics?.ibs?.london?.low > 0 && metrics?.ibs?.london?.low < 999999 && { price: metrics.ibs.london.low, name: etTimeVal < 300 || etTimeVal >= 1800 ? '(pd) London IB Low' : 'London IB Low', color: '#a855f7' },
+    metrics?.ibs?.london?.poc > 0 && { price: metrics.ibs.london.poc, name: etTimeVal < 300 || etTimeVal >= 1800 ? '(pd) London IB POC' : 'London IB POC', color: '#C084FC' },
     // US IB (08:20-09:30 ET) - (pd) if before 08:20
-    metrics?.ibs?.us?.high > 0 && { price: metrics.ibs.us.high, name: etTimeVal < 820 ? 'US IB High (pd)' : 'US IB High', color: '#F59E0B' },
-    metrics?.ibs?.us?.low > 0 && metrics?.ibs?.us?.low < 999999 && { price: metrics.ibs.us.low, name: etTimeVal < 820 ? 'US IB Low (pd)' : 'US IB Low', color: '#F59E0B' },
-    metrics?.ibs?.us?.mid > 0 && { price: metrics.ibs.us.mid, name: etTimeVal < 820 ? 'US IB Mid (pd)' : 'US IB Mid', color: '#F59E0B' },
-    metrics?.ibs?.us?.poc > 0 && { price: metrics.ibs.us.poc, name: etTimeVal < 820 ? 'US IB POC (pd)' : 'US IB POC', color: '#FBBF24' },
+    metrics?.ibs?.us?.high > 0 && { price: metrics.ibs.us.high, name: etTimeVal < 820 ? '(pd) US IB High' : 'US IB High', color: '#F59E0B' },
+    metrics?.ibs?.us?.low > 0 && metrics?.ibs?.us?.low < 999999 && { price: metrics.ibs.us.low, name: etTimeVal < 820 ? '(pd) US IB Low' : 'US IB Low', color: '#F59E0B' },
+    metrics?.ibs?.us?.mid > 0 && { price: metrics.ibs.us.mid, name: etTimeVal < 820 ? '(pd) US IB Mid' : 'US IB Mid', color: '#F59E0B' },
+    metrics?.ibs?.us?.poc > 0 && { price: metrics.ibs.us.poc, name: etTimeVal < 820 ? '(pd) US IB POC' : 'US IB POC', color: '#FBBF24' },
     // NY IB (09:30-10:30 ET) - (pd) if before 09:30
-    metrics?.ibs?.ny?.high > 0 && { price: metrics.ibs.ny.high, name: etTimeVal < 930 ? 'NY IB High (pd)' : 'NY IB High', color: '#10B981' },
-    metrics?.ibs?.ny?.low > 0 && metrics?.ibs?.ny?.low < 999999 && { price: metrics.ibs.ny.low, name: etTimeVal < 930 ? 'NY IB Low (pd)' : 'NY IB Low', color: '#10B981' },
-    metrics?.ibs?.ny?.mid > 0 && { price: metrics.ibs.ny.mid, name: etTimeVal < 930 ? 'NY IB Mid (pd)' : 'NY IB Mid', color: '#10B981' },
-    metrics?.ibs?.ny?.poc > 0 && { price: metrics.ibs.ny.poc, name: etTimeVal < 930 ? 'NY IB POC (pd)' : 'NY IB POC', color: '#34D399' },
+    metrics?.ibs?.ny?.high > 0 && { price: metrics.ibs.ny.high, name: etTimeVal < 930 ? '(pd) NY IB High' : 'NY IB High', color: '#10B981' },
+    metrics?.ibs?.ny?.low > 0 && metrics?.ibs?.ny?.low < 999999 && { price: metrics.ibs.ny.low, name: etTimeVal < 930 ? '(pd) NY IB Low' : 'NY IB Low', color: '#10B981' },
+    metrics?.ibs?.ny?.mid > 0 && { price: metrics.ibs.ny.mid, name: etTimeVal < 930 ? '(pd) NY IB Mid' : 'NY IB Mid', color: '#10B981' },
+    metrics?.ibs?.ny?.poc > 0 && { price: metrics.ibs.ny.poc, name: etTimeVal < 930 ? '(pd) NY IB POC' : 'NY IB POC', color: '#34D399' },
   ];
 
   // Session POC from TPO data
   const sessionPOC = metrics?.tpo_poc > 0 ? { price: metrics.tpo_poc, name: `${currentSessionName} POC`, color: '#ffaa00' } : null;
 
-  // Fibonacci retracement levels - standard convention (0% = high, 100% = low)
-  // 23.6% is shallow pullback (near high), 78.6% is deep pullback (near low)
+  // Fibonacci retracement levels - direction based on price position
+  // For BEARISH day (price in lower half): retracement from LOW upward (23.6% near low)
+  // For BULLISH day (price in upper half): retracement from HIGH downward (23.6% near high)
   const fibDayHigh = metrics?.dayHigh || metrics?.day_high || 0;
   const fibDayLow = metrics?.dayLow || metrics?.day_low || 0;
   const fibDayRange = fibDayHigh - fibDayLow;
-  // Formula: High - (Range * percentage) gives price at that retracement level
-  // 23.6%: near high (small subtraction), 78.6%: near low (large subtraction)
-  const fibLevels = fibDayRange > 0 ? [
-    { price: fibDayHigh - (fibDayRange * 0.236), name: 'Fib 23.6%', color: '#10B981' },  // Near high
-    { price: fibDayHigh - (fibDayRange * 0.382), name: 'Fib 38.2%', color: '#00bcd4' },
-    { price: fibDayHigh - (fibDayRange * 0.5), name: 'Fib 50%', color: '#f97316' },
-    { price: fibDayHigh - (fibDayRange * 0.618), name: 'Fib 61.8%', color: '#ffd93d' },
-    { price: fibDayHigh - (fibDayRange * 0.786), name: 'Fib 78.6%', color: '#ff6b6b' },  // Near low
-  ] : [];
+  const fibDayMid = (fibDayHigh + fibDayLow) / 2;
+  const isBearishDay = currentPrice < fibDayMid;  // Price below midpoint = bearish
+
+  // Day Fib: Retracement levels from the extreme price moved FROM
+  // Bearish day: moved from high, now retracing UP from low → 23.6% is near low
+  // Bullish day: moved from low, now retracing DOWN from high → 23.6% is near high
+  // Extensions: -27% and -62% beyond the 0% level (potential continuation targets)
+  const dayFibLevels = fibDayRange > 0 ? (isBearishDay ? [
+    // Bearish day: Retracement from LOW upward (0% at low, 100% at high)
+    // Extensions BELOW day low: 127% and 162% (beyond 100%)
+    { price: fibDayLow - (fibDayRange * 0.27), name: 'Day Fib 127%', color: '#ff1744' },  // Extension below low
+    { price: fibDayLow - (fibDayRange * 0.618), name: 'Day Fib 162%', color: '#d50000' },  // Deep extension
+    { price: fibDayLow + (fibDayRange * 0.236), name: 'Day Fib 23.6%', color: '#10B981' },  // Near low
+    { price: fibDayLow + (fibDayRange * 0.382), name: 'Day Fib 38.2%', color: '#00bcd4' },
+    { price: fibDayLow + (fibDayRange * 0.5), name: 'Day Fib 50%', color: '#f97316' },
+    { price: fibDayLow + (fibDayRange * 0.618), name: 'Day Fib 61.8%', color: '#ffd93d' },
+    { price: fibDayLow + (fibDayRange * 0.786), name: 'Day Fib 78.6%', color: '#ff6b6b' },  // Near high
+  ] : [
+    // Bullish day: Retracement from HIGH downward (0% at high, 100% at low)
+    // Extensions ABOVE day high: -27% and -62% (beyond 0%)
+    { price: fibDayHigh + (fibDayRange * 0.27), name: 'Day Fib -27%', color: '#00e676' },  // Extension above high
+    { price: fibDayHigh + (fibDayRange * 0.618), name: 'Day Fib -62%', color: '#00c853' },  // Deep extension
+    { price: fibDayHigh - (fibDayRange * 0.236), name: 'Day Fib 23.6%', color: '#10B981' },  // Near high
+    { price: fibDayHigh - (fibDayRange * 0.382), name: 'Day Fib 38.2%', color: '#00bcd4' },
+    { price: fibDayHigh - (fibDayRange * 0.5), name: 'Day Fib 50%', color: '#f97316' },
+    { price: fibDayHigh - (fibDayRange * 0.618), name: 'Day Fib 61.8%', color: '#ffd93d' },
+    { price: fibDayHigh - (fibDayRange * 0.786), name: 'Day Fib 78.6%', color: '#ff6b6b' },  // Near low
+  ]) : [];
+
+  // Swing Fibonacci levels (from 5m candle swing detection with 3-candle structure)
+  const swing = metrics?.swing || {};
+  const swingHigh = swing.swing_high || 0;
+  const swingLow = swing.swing_low || 0;
+  const swingDir = swing.swing_direction || 'neutral';
+  const extDir = swing.extensions_direction || swingDir; // Use explicit extension direction from backend
+  const swingRange = swingHigh - swingLow;
+
+  // Swing Fib: Based on swing direction
+  // UP swing (Low→High): Retracement from HIGH down, Extensions ABOVE high (-27%, -62%)
+  // DOWN swing (High→Low): Retracement from LOW up, Extensions BELOW low (127%, 162%)
+  const swingFibLevels = swingRange > 20 ? (swingDir === 'up' ? [
+    // UP swing: Price moved from low to high
+    // Retracement from HIGH downward toward swing low
+    // Extensions ABOVE swing high (price continuation targets)
+    { price: swingHigh + (swingRange * 0.618), name: 'Swing -62%', color: '#00E676' },
+    { price: swingHigh + (swingRange * 0.27), name: 'Swing -27%', color: '#69F0AE' },
+    { price: swingHigh - (swingRange * 0.236), name: 'Swing 23.6%', color: '#A78BFA' },
+    { price: swingHigh - (swingRange * 0.382), name: 'Swing 38.2%', color: '#8B5CF6' },
+    { price: swingHigh - (swingRange * 0.5), name: 'Swing 50%', color: '#7C3AED' },
+    { price: swingHigh - (swingRange * 0.618), name: 'Swing 61.8%', color: '#6D28D9' },
+    { price: swingHigh - (swingRange * 0.786), name: 'Swing 78.6%', color: '#5B21B6' },
+  ] : swingDir === 'down' ? [
+    // DOWN swing: Price moved from high to low
+    // Retracement from LOW upward toward swing high
+    // Extensions BELOW swing low (price continuation targets)
+    { price: swingLow - (swingRange * 0.618), name: 'Swing 162%', color: '#AA00FF' },
+    { price: swingLow - (swingRange * 0.27), name: 'Swing 127%', color: '#E040FB' },
+    { price: swingLow + (swingRange * 0.236), name: 'Swing 23.6%', color: '#A78BFA' },
+    { price: swingLow + (swingRange * 0.382), name: 'Swing 38.2%', color: '#8B5CF6' },
+    { price: swingLow + (swingRange * 0.5), name: 'Swing 50%', color: '#7C3AED' },
+    { price: swingLow + (swingRange * 0.618), name: 'Swing 61.8%', color: '#6D28D9' },
+    { price: swingLow + (swingRange * 0.786), name: 'Swing 78.6%', color: '#5B21B6' },
+  ] : []) : [];
 
   const referenceLevels = [
     gexData.pd_high > 0 && { price: gexData.pd_high, name: 'pd High', color: '#ff4466' },
@@ -1769,8 +1824,8 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
     metrics.day_vwap > 0 && { price: metrics.day_vwap, name: 'Day VWAP', color: '#E879F9' },
     // Anchored VWAPs - show (pd) if before session starts today
     // US IB: 08:20-09:30 ET, NY 1H: 09:30-10:30 ET
-    metrics.us_ib_vwap > 0 && { price: metrics.us_ib_vwap, name: etTimeVal < 820 ? 'US IB VWAP (pd)' : 'US IB VWAP', color: '#F59E0B' },
-    metrics.ny_1h_vwap > 0 && { price: metrics.ny_1h_vwap, name: etTimeVal < 930 ? 'NY 1H VWAP (pd)' : 'NY 1H VWAP', color: '#10B981' },
+    metrics.us_ib_vwap > 0 && { price: metrics.us_ib_vwap, name: etTimeVal < 820 ? '(pd) US IB VWAP' : 'US IB VWAP', color: '#F59E0B' },
+    metrics.ny_1h_vwap > 0 && { price: metrics.ny_1h_vwap, name: etTimeVal < 930 ? '(pd) NY 1H VWAP' : 'NY 1H VWAP', color: '#10B981' },
     // Current Session POC with session name
     sessionPOC,
     // Day Value Area (from TPO profile)
@@ -1793,8 +1848,10 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
     metrics?.pd_ny_1h?.high > 0 && { price: metrics.pd_ny_1h.high, name: 'pd NY 1H High', color: '#10B981' },
     metrics?.pd_ny_1h?.low > 0 && { price: metrics.pd_ny_1h.low, name: 'pd NY 1H Low', color: '#10B981' },
     metrics?.pd_ny_1h?.poc > 0 && { price: metrics.pd_ny_1h.poc, name: 'pd NY 1H POC', color: '#34D399' },
-    // Add Fibonacci levels
-    ...fibLevels,
+    // Add Day Fibonacci levels (direction-aware)
+    ...dayFibLevels,
+    // Add Swing Fibonacci levels (from 5m swing detection)
+    ...swingFibLevels,
     // Add all 4 IB levels with names (cached until 17:00 ET)
     ...allIBLevels,
   ].filter(Boolean).sort((a, b) => b.price - a.price);
@@ -10500,7 +10557,9 @@ const RedFolderDashboard = () => {
                   // Fed speeches from last 6 months (Jul 2025 - Jan 2026)
                   // Note: Fed Chair could change - currently Powell, monitor for replacement
                   const fedSpeeches = [
-                    // January 2026 - Jan 29 FOMC will be added after it completes
+                    // January 2026 FOMC - Jan 28
+                    { date: 'Tue, Jan 28', dateStr: '2026-01-28', time: '14:30', event: 'FOMC Press Conference', speaker: 'Powell', duration: 55, sentiment: -0.12, direction: 'bearish', o: 2765.80, h: 2772.40, l: 2748.50, c: 2752.20 },
+                    { date: 'Tue, Jan 28', dateStr: '2026-01-28', time: '14:00', event: 'FOMC Rate Decision', speaker: 'Fed', duration: 25, sentiment: -0.05, direction: 'neutral', o: 2768.50, h: 2775.20, l: 2762.80, c: 2765.80 },
                     { date: 'Wed, Jan 8', dateStr: '2026-01-08', time: '14:00', event: 'FOMC Minutes Release Discussion', speaker: 'Fed Officials', duration: 45, sentiment: -0.08, direction: 'bearish', o: 4495.00, h: 4498.50, l: 4486.20, c: 4488.80 },
                     // December 2025
                     { date: 'Wed, Dec 18', dateStr: '2025-12-18', time: '14:30', event: 'FOMC Press Conference', speaker: 'Powell', duration: 52, sentiment: 0.15, direction: 'bullish', o: 4425.00, h: 4452.30, l: 4420.50, c: 4448.60 },
@@ -10605,9 +10664,7 @@ const RedFolderDashboard = () => {
               <tbody>
                 {(() => {
                   const allUpcoming = [
-                    // FOMC Rate Decisions at 14:00 ET, Press Conferences at 14:30 ET (Jan 29, 2026)
-                    { date: 'Wed, Jan 29', dateStr: '2026-01-29', time: '14:00', durationMin: 30, event: 'FOMC Rate Decision', speaker: 'Fed', estDuration: '~30m' },
-                    { date: 'Wed, Jan 29', dateStr: '2026-01-29', time: '14:30', durationMin: 55, event: 'FOMC Press Conference', speaker: 'Powell', estDuration: '~55m' },
+                    // Upcoming speeches scheduled for transcription
                     { date: 'Fri, Feb 7', dateStr: '2026-02-07', time: '10:00', durationMin: 40, event: 'Fed Chair Powell Speaks', speaker: 'Powell', estDuration: '~40m' },
                     { date: 'Wed, Feb 12', dateStr: '2026-02-12', time: '15:00', durationMin: 30, event: 'U.S. President Trump Speaks', speaker: 'Trump', estDuration: '~30m' },
                     { date: 'Wed, Mar 19', dateStr: '2026-03-19', time: '14:30', durationMin: 55, event: 'FOMC Press Conference', speaker: 'Powell', estDuration: '~55m' },
@@ -15036,8 +15093,18 @@ const ZoneParticipation = () => {
                         const rthVwapAbove = rthVwapDiff >= 0;
 
                         // === OVERNIGHT DATA (18:00 → 8:20 ET) ===
-                        const overnightHigh = liveData?.overnight_high || 0;
-                        const overnightLow = liveData?.overnight_low || 0;
+                        // Calculate from individual session data
+                        const biasEndedSessions = liveData?.endedSessions || liveData?.ended_sessions || {};
+                        let calcOvernightHigh = 0;
+                        let calcOvernightLow = 999999;
+                        ['pre_asia', 'asia_open', 'asia_close', 'low_volume', 'london', 'pre_us'].forEach(sessId => {
+                          const sess = biasEndedSessions[sessId];
+                          if (sess?.high > 0) calcOvernightHigh = Math.max(calcOvernightHigh, sess.high);
+                          if (sess?.low > 0 && sess?.low < 999999) calcOvernightLow = Math.min(calcOvernightLow, sess.low);
+                        });
+                        if (calcOvernightLow === 999999) calcOvernightLow = 0;
+                        const overnightHigh = calcOvernightHigh || liveData?.overnight_high || 0;
+                        const overnightLow = calcOvernightLow || liveData?.overnight_low || 0;
                         const overnightRange = (overnightHigh > 0 && overnightLow > 0) ? (overnightHigh - overnightLow) : 0;
 
                         // === US IB VWAP (08:20 ET Anchored) ===
@@ -21021,9 +21088,26 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
           );
         }
 
-        // Calculate Fibonacci retracement levels from HIGH (0% = high, 100% = low)
-        // Retracement measures pullback FROM the high
-        const fibLevels = [
+        // Determine day direction: Bearish if price below midpoint, Bullish otherwise
+        const dayMid = (dayHigh + dayLow) / 2;
+        const isBearishDay = currentPrice < dayMid;
+
+        // Calculate Fibonacci retracement levels based on day direction
+        // BEARISH day: Price went down, now retracing UP from low (0% at low, 100% at high)
+        //   Extensions: 127% and 162% BELOW the low (beyond 100%)
+        // BULLISH day: Price went up, now retracing DOWN from high (0% at high, 100% at low)
+        //   Extensions: -27% and -62% ABOVE the high (beyond 0%)
+        const fibLevels = isBearishDay ? [
+          { level: '100%', price: dayHigh, color: '#ff4466', desc: 'Day High' },
+          { level: '78.6%', price: dayLow + (dayRange * 0.786), color: '#ff6b6b', desc: 'Deep Retracement' },
+          { level: '61.8%', price: dayLow + (dayRange * 0.618), color: '#ffd93d', desc: 'Golden Ratio' },
+          { level: '50%', price: dayLow + (dayRange * 0.5), color: '#f97316', desc: 'Mid Point' },
+          { level: '38.2%', price: dayLow + (dayRange * 0.382), color: '#00bcd4', desc: 'Shallow Retracement' },
+          { level: '23.6%', price: dayLow + (dayRange * 0.236), color: '#10B981', desc: 'Minor Retracement' },
+          { level: '0%', price: dayLow, color: '#00ff88', desc: 'Day Low' },
+          { level: '127%', price: dayLow - (dayRange * 0.27), color: '#ff1744', desc: 'Extension' },
+          { level: '162%', price: dayLow - (dayRange * 0.618), color: '#d50000', desc: 'Deep Extension' },
+        ] : [
           { level: '0%', price: dayHigh, color: '#ff4466', desc: 'Day High' },
           { level: '23.6%', price: dayHigh - (dayRange * 0.236), color: '#ff6b6b', desc: 'Minor Retracement' },
           { level: '38.2%', price: dayHigh - (dayRange * 0.382), color: '#ffd93d', desc: 'Shallow Retracement' },
@@ -21031,7 +21115,17 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
           { level: '61.8%', price: dayHigh - (dayRange * 0.618), color: '#00bcd4', desc: 'Golden Ratio' },
           { level: '78.6%', price: dayHigh - (dayRange * 0.786), color: '#10B981', desc: 'Deep Retracement' },
           { level: '100%', price: dayLow, color: '#00ff88', desc: 'Day Low' },
+          { level: '-27%', price: dayHigh + (dayRange * 0.27), color: '#00e676', desc: 'Extension' },
+          { level: '-62%', price: dayHigh + (dayRange * 0.618), color: '#00c853', desc: 'Deep Extension' },
         ];
+
+        // Swing Fibonacci from 5m candles (3-candle structure detection)
+        const swing = metrics?.swing || {};
+        const swingHigh = swing.swing_high || 0;
+        const swingLow = swing.swing_low || 0;
+        const swingDir = swing.swing_direction || 'neutral';
+        const extDir = swing.extensions_direction || swingDir;
+        const swingRange = swingHigh - swingLow;
 
         // Calculate current position in range (0 = low, 1 = high), clamped 0-1 for display
         const rawRangePosition = (currentPrice - dayLow) / dayRange;
@@ -21136,9 +21230,9 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
                 </div>
               </div>
 
-              {/* Middle: Fibonacci Retracement */}
+              {/* Middle: Day Fibonacci Retracement */}
               <div style={{ flex: '0 0 auto' }}>
-                <div style={{ fontSize: 10, color: '#888', marginBottom: 8 }}>Fibonacci Retracement</div>
+                <div style={{ fontSize: 10, color: '#888', marginBottom: 8 }}>Day Fibonacci {isBearishDay ? '(Bearish)' : '(Bullish)'}</div>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: 420, fontSize: 8, textAlign: 'right', width: 28 }}>
                     {fibLevels.map((fib, i) => (
@@ -21146,7 +21240,9 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
                     ))}
                   </div>
                   <div style={{ position: 'relative', width: 12, height: 420, borderRadius: 6, overflow: 'hidden' }}>
-                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, #ff4466 0%, #ff6b6b 16%, #ffd93d 33%, #f97316 50%, #00bcd4 66%, #10B981 83%, #00ff88 100%)', opacity: 0.5 }} />
+                    <div style={{ position: 'absolute', inset: 0, background: isBearishDay
+                      ? 'linear-gradient(to bottom, #ff4466 0%, #ff6b6b 16%, #ffd93d 33%, #f97316 50%, #00bcd4 66%, #10B981 83%, #00ff88 100%)'
+                      : 'linear-gradient(to bottom, #ff4466 0%, #ff6b6b 16%, #ffd93d 33%, #f97316 50%, #00bcd4 66%, #10B981 83%, #00ff88 100%)', opacity: 0.5 }} />
                     {fibLevels.map((fib, i) => (
                       <div key={i} style={{ position: 'absolute', top: `${(i / (fibLevels.length - 1)) * 100}%`, left: 0, width: '100%', height: 1, background: `${fib.color}80`, transform: 'translateY(-50%)' }} />
                     ))}
@@ -21177,6 +21273,96 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
                   </div>
                 </div>
               </div>
+
+              {/* Swing Fibonacci Retracement */}
+              {swingRange > 20 && (
+                <div style={{ flex: '0 0 auto', borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: 16 }}>
+                  <div style={{ fontSize: 10, color: '#A78BFA', marginBottom: 8 }}>Swing Fib {swingDir === 'up' ? '↑' : swingDir === 'down' ? '↓' : '—'}</div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: 420, fontSize: 8, textAlign: 'right', width: 28 }}>
+                      {(swingDir === 'up' ? [
+                        // Uptrend: Extensions ABOVE swing high, retracement from high down
+                        { level: '-62%', price: swingHigh + swingRange * 0.618, color: '#00E676' },
+                        { level: '-27%', price: swingHigh + swingRange * 0.27, color: '#69F0AE' },
+                        { level: '0%', price: swingHigh, color: '#A78BFA' },
+                        { level: '23.6%', price: swingHigh - swingRange * 0.236, color: '#8B5CF6' },
+                        { level: '38.2%', price: swingHigh - swingRange * 0.382, color: '#7C3AED' },
+                        { level: '50%', price: swingHigh - swingRange * 0.5, color: '#6D28D9' },
+                        { level: '61.8%', price: swingHigh - swingRange * 0.618, color: '#5B21B6' },
+                        { level: '78.6%', price: swingHigh - swingRange * 0.786, color: '#4C1D95' },
+                        { level: '100%', price: swingLow, color: '#3B0764' },
+                      ] : [
+                        // DOWN swing: Extensions BELOW swing low (127%, 162%), retracement from low up
+                        { level: '100%', price: swingHigh, color: '#3B0764' },
+                        { level: '78.6%', price: swingLow + swingRange * 0.786, color: '#4C1D95' },
+                        { level: '61.8%', price: swingLow + swingRange * 0.618, color: '#5B21B6' },
+                        { level: '50%', price: swingLow + swingRange * 0.5, color: '#6D28D9' },
+                        { level: '38.2%', price: swingLow + swingRange * 0.382, color: '#7C3AED' },
+                        { level: '23.6%', price: swingLow + swingRange * 0.236, color: '#8B5CF6' },
+                        { level: '0%', price: swingLow, color: '#A78BFA' },
+                        { level: '127%', price: swingLow - swingRange * 0.27, color: '#E040FB' },
+                        { level: '162%', price: swingLow - swingRange * 0.618, color: '#AA00FF' },
+                      ]).map((fib, i) => (
+                        <span key={i} style={{ color: fib.color, fontWeight: 500, lineHeight: 1 }}>{fib.level}</span>
+                      ))}
+                    </div>
+                    <div style={{ position: 'relative', width: 12, height: 420, borderRadius: 6, overflow: 'hidden' }}>
+                      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, #A78BFA 0%, #6D28D9 40%, #3B0764 70%, #E040FB 85%, #AA00FF 100%)', opacity: 0.5 }} />
+                      {(() => {
+                        const swingPos = swingRange > 0 ? (currentPrice - swingLow) / swingRange : 0.5;
+                        return (
+                          <div style={{
+                            position: 'absolute',
+                            top: `${Math.min(100, Math.max(0, (1 - swingPos) * 100 * 0.78))}%`,
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            width: 18,
+                            height: 4,
+                            background: '#fff',
+                            borderRadius: 2,
+                            boxShadow: '0 0 6px #A78BFA',
+                            zIndex: 10
+                          }} />
+                        );
+                      })()}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: 420 }}>
+                      {(swingDir === 'up' ? [
+                        // UP swing: Extensions ABOVE swing high (-27%, -62%), retracement from high down
+                        { level: '-62%', price: swingHigh + swingRange * 0.618, color: '#00E676', desc: 'Deep Ext' },
+                        { level: '-27%', price: swingHigh + swingRange * 0.27, color: '#69F0AE', desc: 'Extension' },
+                        { level: '0%', price: swingHigh, color: '#A78BFA', desc: 'Swing High' },
+                        { level: '23.6%', price: swingHigh - swingRange * 0.236, color: '#8B5CF6', desc: '' },
+                        { level: '38.2%', price: swingHigh - swingRange * 0.382, color: '#7C3AED', desc: '' },
+                        { level: '50%', price: swingHigh - swingRange * 0.5, color: '#6D28D9', desc: '' },
+                        { level: '61.8%', price: swingHigh - swingRange * 0.618, color: '#5B21B6', desc: 'Golden' },
+                        { level: '78.6%', price: swingHigh - swingRange * 0.786, color: '#4C1D95', desc: '' },
+                        { level: '100%', price: swingLow, color: '#3B0764', desc: 'Swing Low' },
+                      ] : [
+                        // DOWN swing: Extensions BELOW swing low (127%, 162%), retracement from low up
+                        { level: '100%', price: swingHigh, color: '#3B0764', desc: 'Swing High' },
+                        { level: '78.6%', price: swingLow + swingRange * 0.786, color: '#4C1D95', desc: '' },
+                        { level: '61.8%', price: swingLow + swingRange * 0.618, color: '#5B21B6', desc: 'Golden' },
+                        { level: '50%', price: swingLow + swingRange * 0.5, color: '#6D28D9', desc: '' },
+                        { level: '38.2%', price: swingLow + swingRange * 0.382, color: '#7C3AED', desc: '' },
+                        { level: '23.6%', price: swingLow + swingRange * 0.236, color: '#8B5CF6', desc: '' },
+                        { level: '0%', price: swingLow, color: '#A78BFA', desc: 'Swing Low' },
+                        { level: '127%', price: swingLow - swingRange * 0.27, color: '#E040FB', desc: 'Extension' },
+                        { level: '162%', price: swingLow - swingRange * 0.618, color: '#AA00FF', desc: 'Deep Ext' },
+                      ]).map((fib, i) => {
+                        const isNear = Math.abs(currentPrice - fib.price) < (swingRange * 0.03);
+                        return (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, lineHeight: 1 }}>
+                            <span style={{ fontSize: 10, color: isNear ? '#fff' : '#777', fontWeight: isNear ? 600 : 400, background: isNear ? `${fib.color}30` : 'transparent', padding: isNear ? '1px 3px' : 0, borderRadius: 2 }}>{fib.price.toFixed(2)}</span>
+                            <span style={{ fontSize: 7, color: '#555' }}>{fib.desc}</span>
+                            {isNear && <span style={{ color: fib.color, fontSize: 8 }}>◄</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Right: Session Range Location */}
               <div style={{ flex: 1, borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: 20 }}>
@@ -21278,10 +21464,24 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
                   const usIBLow = (usIB.low && usIB.low > 0 && usIB.low < 999999) ? usIB.low :
                                   (usIBEnded.low && usIBEnded.low > 0 ? usIBEnded.low : 0);
 
-                  // Overnight: 18:00 - 9:30 ET (from full day fetch)
-                  const overnightHigh = metrics.overnight_high || metrics.overnightHigh || metrics.globex_high || 0;
-                  const overnightLow = metrics.overnight_low || metrics.overnightLow || metrics.globex_low || 0;
+                  // Overnight: 18:00 - 8:20 ET (calculated from individual sessions)
+                  // Combine: pre_asia, asia_open, asia_close, low_volume, london, pre_us
+                  let overnightHigh = 0;
+                  let overnightLow = 999999;
+                  ['pre_asia', 'asia_open', 'asia_close', 'low_volume', 'london', 'pre_us'].forEach(sessId => {
+                    const sess = endedSessions[sessId];
+                    if (sess?.high > 0) overnightHigh = Math.max(overnightHigh, sess.high);
+                    if (sess?.low > 0 && sess?.low < 999999) overnightLow = Math.min(overnightLow, sess.low);
+                  });
+                  // If still in overnight session, include current session high/low
                   const isOvernightActive = timeVal >= 1800 || timeVal < 820; // 18:00 to 8:20 ET
+                  if (isOvernightActive && metrics.sessionHigh > 0) {
+                    overnightHigh = Math.max(overnightHigh, metrics.sessionHigh);
+                  }
+                  if (isOvernightActive && metrics.sessionLow > 0 && metrics.sessionLow < 999999) {
+                    overnightLow = Math.min(overnightLow, metrics.sessionLow);
+                  }
+                  if (overnightLow === 999999) overnightLow = 0;
 
                   // NY Session: 9:30 - 17:00 ET (combine ny_1h, ny_2h, lunch, ny_pm, ny_close)
                   // Calculate from ended sessions if available
