@@ -10500,8 +10500,7 @@ const RedFolderDashboard = () => {
                   // Fed speeches from last 6 months (Jul 2025 - Jan 2026)
                   // Note: Fed Chair could change - currently Powell, monitor for replacement
                   const fedSpeeches = [
-                    // January 2026
-                    { date: 'Wed, Jan 28', dateStr: '2026-01-28', time: '14:30', event: 'FOMC Press Conference', speaker: 'Powell', duration: 55, sentiment: 0.12, direction: 'bullish', o: 2763.50, h: 2778.80, l: 2758.20, c: 2775.40 },
+                    // January 2026 - Jan 29 FOMC will be added after it completes
                     { date: 'Wed, Jan 8', dateStr: '2026-01-08', time: '14:00', event: 'FOMC Minutes Release Discussion', speaker: 'Fed Officials', duration: 45, sentiment: -0.08, direction: 'bearish', o: 4495.00, h: 4498.50, l: 4486.20, c: 4488.80 },
                     // December 2025
                     { date: 'Wed, Dec 18', dateStr: '2025-12-18', time: '14:30', event: 'FOMC Press Conference', speaker: 'Powell', duration: 52, sentiment: 0.15, direction: 'bullish', o: 4425.00, h: 4452.30, l: 4420.50, c: 4448.60 },
@@ -10606,12 +10605,12 @@ const RedFolderDashboard = () => {
               <tbody>
                 {(() => {
                   const allUpcoming = [
-                    // FOMC Rate Decisions at 14:00 ET, Press Conferences at 14:30 ET
-                    // Jan 28 FOMC already passed - will be filtered out automatically
-                    { date: 'Wed, Jan 28', dateStr: '2026-01-28', time: '14:30', durationMin: 55, event: 'FOMC Press Conference', speaker: 'Powell', estDuration: '~55m' },
+                    // FOMC Rate Decisions at 14:00 ET, Press Conferences at 14:30 ET (Jan 29, 2026)
+                    { date: 'Wed, Jan 29', dateStr: '2026-01-29', time: '14:00', durationMin: 30, event: 'FOMC Rate Decision', speaker: 'Fed', estDuration: '~30m' },
+                    { date: 'Wed, Jan 29', dateStr: '2026-01-29', time: '14:30', durationMin: 55, event: 'FOMC Press Conference', speaker: 'Powell', estDuration: '~55m' },
                     { date: 'Fri, Feb 7', dateStr: '2026-02-07', time: '10:00', durationMin: 40, event: 'Fed Chair Powell Speaks', speaker: 'Powell', estDuration: '~40m' },
                     { date: 'Wed, Feb 12', dateStr: '2026-02-12', time: '15:00', durationMin: 30, event: 'U.S. President Trump Speaks', speaker: 'Trump', estDuration: '~30m' },
-                    { date: 'Wed, Mar 18', dateStr: '2026-03-18', time: '14:30', durationMin: 55, event: 'FOMC Press Conference', speaker: 'Powell', estDuration: '~55m' },
+                    { date: 'Wed, Mar 19', dateStr: '2026-03-19', time: '14:30', durationMin: 55, event: 'FOMC Press Conference', speaker: 'Powell', estDuration: '~55m' },
                   ];
 
                   // Get current ET time
