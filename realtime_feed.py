@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.9.2"
+APP_VERSION = "15.9.3"
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -67,12 +67,12 @@ PORT = int(os.environ.get('PORT', 8080))
 CONTRACT_CONFIG = {
     'GC': {
         'symbol': 'GC.FUT',  # Parent symbol - filter by instrument_id for specific contract
-        'front_month': 'GCG6',  # Databento uses single-digit year: GCG6 = Feb 2026
+        'front_month': 'GCG6',  # Databento format: GCG6 = Feb 2026
         'front_month_name': 'Gold Feb 2026',
-        'next_month': 'GCJ6',  # Databento uses single-digit year: GCJ6 = Apr 2026
-        'next_month_name': 'Gold Apr 2026',
-        'active_month': 'GCJ6',  # What we're actually trading (Apr 2026)
+        'front_month_display': 'GCG26',  # User display format
+        'active_month': 'GCJ6',  # Databento format: GCJ6 = Apr 2026 (what we trade)
         'active_month_name': 'Gold Apr 2026',
+        'active_month_display': 'GCJ26',  # User display format
         'name': 'Gold Apr 2026',
         'ticker': 'GC1!',
         'price_min': 2000,
@@ -83,8 +83,10 @@ CONTRACT_CONFIG = {
         'symbol': 'NQ.FUT',
         'front_month': 'NQH6',  # Databento: NQH6 = Mar 2026
         'front_month_name': 'Nasdaq Mar 2026',
-        'next_month': 'NQM6',  # Databento: NQM6 = Jun 2026
-        'next_month_name': 'Nasdaq Jun 2026',
+        'front_month_display': 'NQH26',
+        'active_month': 'NQH6',  # Same as front for NQ
+        'active_month_name': 'Nasdaq Mar 2026',
+        'active_month_display': 'NQH26',
         'name': 'Nasdaq Mar 2026',
         'ticker': 'NQ1!',
         'price_min': 10000,
@@ -5019,10 +5021,10 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             now = datetime.utcnow()  # Server uses UTC
 
             # High impact events in UTC (ET + 5 hours)
-            # Powell speaking Jan 29, 2026 - FOMC day
-            # Event window: all day on Jan 28-29, 2026
+            # Powell speaking Jan 29, 2026 - FOMC Press Conference at 2:30 PM ET = 19:30 UTC
             FED_EVENTS = [
-                (2026, 1, 29, 12, 0, "Fed Chair Powell Speaks - FOMC", "CRITICAL"),  # noon UTC
+                (2026, 1, 29, 19, 30, "FOMC Press Conference - Powell", "CRITICAL"),  # 2:30 PM ET
+                (2026, 1, 28, 12, 0, "Pre-FOMC Day", "HIGH"),  # Jan 28 - day before
             ]
 
             scheduler_data = {'active': False, 'event_active': False}
@@ -5030,8 +5032,8 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             for event in FED_EVENTS:
                 year, month, day, hour, minute, event_name, impact = event
                 event_time = datetime(year, month, day, hour, minute)
-                window_start = event_time - timedelta(hours=12)  # 12 hours before
-                window_end = event_time + timedelta(hours=12)    # 12 hours after
+                window_start = event_time - timedelta(hours=24)  # 24 hours before
+                window_end = event_time + timedelta(hours=6)     # 6 hours after
 
                 if window_start <= now <= window_end:
                     scheduler_data = {
@@ -5086,7 +5088,7 @@ class LiveDataHandler(BaseHTTPRequestHandler):
                 'contract': state['contract'],
                 'contract_name': state['contract_name'],
                 'asset_class': state['asset_class'],
-                'available_contracts': {k: {'symbol': v['front_month'], 'name': v['name']} for k, v in CONTRACT_CONFIG.items()},
+                'available_contracts': {k: {'symbol': v.get('active_month_display', v['active_month']), 'name': v['name']} for k, v in CONTRACT_CONFIG.items()},
                 'current_price': state['current_price'],
                 'delta_5m': state['delta_5m'],
                 'delta_30m': state['delta_30m'],
