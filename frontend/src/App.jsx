@@ -1337,16 +1337,34 @@ const Tooltip = ({ children, content, position = 'top' }) => {
   );
 };
 
-// PriceLadder Wrapper - fetches its own data
+// PriceLadder Wrapper - fetches its own data with localStorage cache for instant Fib loading
 const PriceLadderWrapper = ({ selectedContract }) => {
-  const [metrics, setMetrics] = useState({});
-  const [gexData, setGexData] = useState({});
+  // Initialize from localStorage cache for instant display (especially for Fibonacci)
+  const getCachedMetrics = () => {
+    try {
+      const cached = localStorage.getItem('metrics_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        // Only use cache if less than 5 minutes old
+        if (parsed.timestamp && Date.now() - parsed.timestamp < 300000) {
+          return parsed.data || {};
+        }
+      }
+    } catch (e) { /* ignore parse errors */ }
+    return {};
+  };
+
+  const [metrics, setMetrics] = useState(getCachedMetrics);
+  const [gexData, setGexData] = useState(getCachedMetrics);
 
   // Re-fetch when contract changes
   useEffect(() => {
-    // Clear old data immediately when contract changes
-    setMetrics({});
-    setGexData({});
+    // Clear old data immediately when contract changes (but keep cache for same contract)
+    const cached = getCachedMetrics();
+    if (cached.contract !== selectedContract) {
+      setMetrics({});
+      setGexData({});
+    }
 
     const fetchData = async () => {
       try {
@@ -1354,6 +1372,13 @@ const PriceLadderWrapper = ({ selectedContract }) => {
         const data = await response.json();
         setMetrics(data);
         setGexData(data);
+        // Cache to localStorage for instant loading on page refresh
+        try {
+          localStorage.setItem('metrics_cache', JSON.stringify({
+            data: data,
+            timestamp: Date.now()
+          }));
+        } catch (e) { /* ignore storage errors */ }
       } catch (err) {
         console.error("PriceLadder fetch error:", err);
       }
@@ -1375,6 +1400,8 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
   const [showPhaseChart, setShowPhaseChart] = useState(false); // Phase Chart collapsed by default
   const [showOHLCCharts, setShowOHLCCharts] = useState(true); // Price/Delta OHLC charts visible by default
   const [hoveredBigTrade, setHoveredBigTrade] = useState(null); // For big trade bubble tooltip (stores trade.ts for stability)
+  const hoveredBigTradeRef = useRef(null); // Ref to prevent tooltip flicker on re-renders
+  const hoverTimeoutRef = useRef(null); // Timeout ref for debouncing mouseLeave
   const [showPhaseTooltip, setShowPhaseTooltip] = useState(false); // For detailed phase tooltip
   const [showOrderFlowTooltip, setShowOrderFlowTooltip] = useState(false); // For Order Flow Analysis modal
   const [hoveredChartCandle, setHoveredChartCandle] = useState(null); // For crosshair
@@ -1390,6 +1417,37 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
   const [fundingData, setFundingData] = useState({}); // Funding rates data placeholder
   const { isMobile, isTablet } = useResponsive();
   const currentPrice = metrics.current_price || 0;
+
+  // Stabilized hover handlers to prevent tooltip flicker during 300ms data refreshes
+  const handleBigTradeHover = useCallback((tradeId) => {
+    // Clear any pending mouseLeave timeout
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    hoveredBigTradeRef.current = tradeId;
+    setHoveredBigTrade(tradeId);
+  }, []);
+
+  const handleBigTradeLeave = useCallback(() => {
+    // Debounce mouseLeave to prevent flicker during re-renders
+    hoverTimeoutRef.current = setTimeout(() => {
+      // Only clear if no new hover happened
+      if (hoveredBigTradeRef.current === null || hoverTimeoutRef.current !== null) {
+        hoveredBigTradeRef.current = null;
+        setHoveredBigTrade(null);
+      }
+    }, 100); // 100ms debounce prevents flicker from 300ms refresh
+  }, []);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Fetch institutional data (COT, ETF, Open Interest) for ALL contracts
   useEffect(() => {
@@ -1651,38 +1709,51 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
   // Get current session name for VWAP label
   const currentSessionName = metrics?.current_session_name || metrics?.sessionId || 'Session';
 
-  // All 4 IB levels with names - always show, cached until 17:00 ET
+  // Get current ET time for (PD) labels
+  const etNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const etTimeVal = etNow.getHours() * 100 + etNow.getMinutes();
+
+  // All 4 IB levels with names - show (PD) if before session starts today
+  // Trading day starts at 18:00 ET, so for evening sessions, check if we're past the session
+  // For morning sessions (London, US, NY), show (PD) if we're in the evening before they've occurred
+  const isEveningSession = etTimeVal >= 1800 || etTimeVal < 300; // 18:00 ET to 03:00 ET next day
   const allIBLevels = [
-    // Japan IB (19:00-20:00 ET)
-    metrics?.ibs?.japan?.high > 0 && { price: metrics.ibs.japan.high, name: 'Japan IB High', color: '#9370DB' },
-    metrics?.ibs?.japan?.low > 0 && metrics?.ibs?.japan?.low < 999999 && { price: metrics.ibs.japan.low, name: 'Japan IB Low', color: '#9370DB' },
-    // London IB (03:00-04:00 ET)
-    metrics?.ibs?.london?.high > 0 && { price: metrics.ibs.london.high, name: 'London IB High', color: '#a855f7' },
-    metrics?.ibs?.london?.low > 0 && metrics?.ibs?.london?.low < 999999 && { price: metrics.ibs.london.low, name: 'London IB Low', color: '#a855f7' },
-    // US IB (08:20-09:30 ET)
-    metrics?.ibs?.us?.high > 0 && { price: metrics.ibs.us.high, name: 'US IB High', color: '#F59E0B' },
-    metrics?.ibs?.us?.low > 0 && metrics?.ibs?.us?.low < 999999 && { price: metrics.ibs.us.low, name: 'US IB Low', color: '#F59E0B' },
-    metrics?.ibs?.us?.mid > 0 && { price: metrics.ibs.us.mid, name: 'US IB Mid', color: '#F59E0B' },
-    // NY IB (09:30-10:30 ET)
-    metrics?.ibs?.ny?.high > 0 && { price: metrics.ibs.ny.high, name: 'NY IB High', color: '#10B981' },
-    metrics?.ibs?.ny?.low > 0 && metrics?.ibs?.ny?.low < 999999 && { price: metrics.ibs.ny.low, name: 'NY IB Low', color: '#10B981' },
-    metrics?.ibs?.ny?.mid > 0 && { price: metrics.ibs.ny.mid, name: 'NY IB Mid', color: '#10B981' },
+    // Japan IB (19:00-20:00 ET) - (PD) if before 19:00 in evening, or anytime after midnight until Japan IB ends
+    metrics?.ibs?.japan?.high > 0 && { price: metrics.ibs.japan.high, name: etTimeVal < 1900 && etTimeVal >= 1800 ? 'Japan IB High (PD)' : 'Japan IB High', color: '#9370DB' },
+    metrics?.ibs?.japan?.low > 0 && metrics?.ibs?.japan?.low < 999999 && { price: metrics.ibs.japan.low, name: etTimeVal < 1900 && etTimeVal >= 1800 ? 'Japan IB Low (PD)' : 'Japan IB Low', color: '#9370DB' },
+    metrics?.ibs?.japan?.poc > 0 && { price: metrics.ibs.japan.poc, name: etTimeVal < 1900 && etTimeVal >= 1800 ? 'Japan IB POC (PD)' : 'Japan IB POC', color: '#B8A3D9' },
+    // London IB (03:00-04:00 ET) - (PD) if before 03:00
+    metrics?.ibs?.london?.high > 0 && { price: metrics.ibs.london.high, name: etTimeVal < 300 || etTimeVal >= 1800 ? 'London IB High (PD)' : 'London IB High', color: '#a855f7' },
+    metrics?.ibs?.london?.low > 0 && metrics?.ibs?.london?.low < 999999 && { price: metrics.ibs.london.low, name: etTimeVal < 300 || etTimeVal >= 1800 ? 'London IB Low (PD)' : 'London IB Low', color: '#a855f7' },
+    metrics?.ibs?.london?.poc > 0 && { price: metrics.ibs.london.poc, name: etTimeVal < 300 || etTimeVal >= 1800 ? 'London IB POC (PD)' : 'London IB POC', color: '#C084FC' },
+    // US IB (08:20-09:30 ET) - (PD) if before 08:20
+    metrics?.ibs?.us?.high > 0 && { price: metrics.ibs.us.high, name: etTimeVal < 820 ? 'US IB High (PD)' : 'US IB High', color: '#F59E0B' },
+    metrics?.ibs?.us?.low > 0 && metrics?.ibs?.us?.low < 999999 && { price: metrics.ibs.us.low, name: etTimeVal < 820 ? 'US IB Low (PD)' : 'US IB Low', color: '#F59E0B' },
+    metrics?.ibs?.us?.mid > 0 && { price: metrics.ibs.us.mid, name: etTimeVal < 820 ? 'US IB Mid (PD)' : 'US IB Mid', color: '#F59E0B' },
+    metrics?.ibs?.us?.poc > 0 && { price: metrics.ibs.us.poc, name: etTimeVal < 820 ? 'US IB POC (PD)' : 'US IB POC', color: '#FBBF24' },
+    // NY IB (09:30-10:30 ET) - (PD) if before 09:30
+    metrics?.ibs?.ny?.high > 0 && { price: metrics.ibs.ny.high, name: etTimeVal < 930 ? 'NY IB High (PD)' : 'NY IB High', color: '#10B981' },
+    metrics?.ibs?.ny?.low > 0 && metrics?.ibs?.ny?.low < 999999 && { price: metrics.ibs.ny.low, name: etTimeVal < 930 ? 'NY IB Low (PD)' : 'NY IB Low', color: '#10B981' },
+    metrics?.ibs?.ny?.mid > 0 && { price: metrics.ibs.ny.mid, name: etTimeVal < 930 ? 'NY IB Mid (PD)' : 'NY IB Mid', color: '#10B981' },
+    metrics?.ibs?.ny?.poc > 0 && { price: metrics.ibs.ny.poc, name: etTimeVal < 930 ? 'NY IB POC (PD)' : 'NY IB POC', color: '#34D399' },
   ];
 
   // Session POC from TPO data
   const sessionPOC = metrics?.tpo_poc > 0 ? { price: metrics.tpo_poc, name: `${currentSessionName} POC`, color: '#ffaa00' } : null;
 
-  // Fibonacci retracement levels from HIGH (0% = high, 100% = low)
-  // Matches Live Metrics calculation - retracement measures pullback FROM the high
+  // Fibonacci retracement levels - standard convention (0% = high, 100% = low)
+  // 23.6% is shallow pullback (near high), 78.6% is deep pullback (near low)
   const fibDayHigh = metrics?.dayHigh || metrics?.day_high || 0;
   const fibDayLow = metrics?.dayLow || metrics?.day_low || 0;
   const fibDayRange = fibDayHigh - fibDayLow;
+  // Formula: High - (Range * percentage) gives price at that retracement level
+  // 23.6%: near high (small subtraction), 78.6%: near low (large subtraction)
   const fibLevels = fibDayRange > 0 ? [
-    { price: fibDayHigh - (fibDayRange * 0.236), name: 'Fib 23.6%', color: '#ff6b6b' },
-    { price: fibDayHigh - (fibDayRange * 0.382), name: 'Fib 38.2%', color: '#ffd93d' },
+    { price: fibDayHigh - (fibDayRange * 0.236), name: 'Fib 23.6%', color: '#10B981' },  // Near high
+    { price: fibDayHigh - (fibDayRange * 0.382), name: 'Fib 38.2%', color: '#00bcd4' },
     { price: fibDayHigh - (fibDayRange * 0.5), name: 'Fib 50%', color: '#f97316' },
-    { price: fibDayHigh - (fibDayRange * 0.618), name: 'Fib 61.8%', color: '#00bcd4' },
-    { price: fibDayHigh - (fibDayRange * 0.786), name: 'Fib 78.6%', color: '#10B981' },
+    { price: fibDayHigh - (fibDayRange * 0.618), name: 'Fib 61.8%', color: '#ffd93d' },
+    { price: fibDayHigh - (fibDayRange * 0.786), name: 'Fib 78.6%', color: '#ff6b6b' },  // Near low
   ] : [];
 
   const referenceLevels = [
@@ -1696,16 +1767,32 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
     metrics.vwap > 0 && { price: metrics.vwap, name: `${currentSessionName} VWAP`, color: '#00ddff' },
     // Day VWAP (full day from 18:00 ET)
     metrics.day_vwap > 0 && { price: metrics.day_vwap, name: 'Day VWAP', color: '#E879F9' },
-    // Anchored VWAPs (persist until 17:00 ET)
-    metrics.us_ib_vwap > 0 && { price: metrics.us_ib_vwap, name: 'US IB VWAP', color: '#F59E0B' },
-    metrics.ny_1h_vwap > 0 && { price: metrics.ny_1h_vwap, name: 'NY 1H VWAP', color: '#10B981' },
+    // Anchored VWAPs - show (PD) if before session starts today
+    // US IB: 08:20-09:30 ET, NY 1H: 09:30-10:30 ET
+    metrics.us_ib_vwap > 0 && { price: metrics.us_ib_vwap, name: etTimeVal < 820 ? 'US IB VWAP (PD)' : 'US IB VWAP', color: '#F59E0B' },
+    metrics.ny_1h_vwap > 0 && { price: metrics.ny_1h_vwap, name: etTimeVal < 930 ? 'NY 1H VWAP (PD)' : 'NY 1H VWAP', color: '#10B981' },
     // Current Session POC with session name
     sessionPOC,
+    // Day Value Area (from TPO profile)
+    metrics.day_vah > 0 && { price: metrics.day_vah, name: 'Day VAH', color: '#E879F9' },
+    metrics.day_val > 0 && { price: metrics.day_val, name: 'Day VAL', color: '#E879F9' },
+    metrics.day_poc > 0 && { price: metrics.day_poc, name: 'Day POC', color: '#E879F9' },
     showGammaLevels && { price: currentPrice - 15, name: 'S1', color: '#88ff88' },
     showGammaLevels && { price: currentPrice - 30, name: 'S2', color: '#66dd66' },
     showGammaLevels && { price: currentPrice - 50, name: 'S3', color: '#44bb44' },
-    gexData.pdpoc > 0 && { price: gexData.pdpoc, name: 'pdPOC', color: '#ffaa00' },
+    gexData.pdpoc > 0 && { price: gexData.pdpoc, name: 'PD POC', color: '#ffaa00' },
+    // PD Value Area (from historical volume profile)
+    metrics.pd_vah > 0 && { price: metrics.pd_vah, name: 'PD VAH', color: '#ffaa00' },
+    metrics.pd_val > 0 && { price: metrics.pd_val, name: 'PD VAL', color: '#ffaa00' },
     gexData.pd_low > 0 && { price: gexData.pd_low, name: 'PD Low', color: '#00ff88' },
+    // Previous Day US IB levels (08:20-09:30 from yesterday)
+    metrics?.pd_us_ib?.high > 0 && { price: metrics.pd_us_ib.high, name: 'PD US IB High', color: '#F59E0B' },
+    metrics?.pd_us_ib?.low > 0 && { price: metrics.pd_us_ib.low, name: 'PD US IB Low', color: '#F59E0B' },
+    metrics?.pd_us_ib?.poc > 0 && { price: metrics.pd_us_ib.poc, name: 'PD US IB POC', color: '#FBBF24' },
+    // Previous Day NY 1H levels (09:30-10:30 from yesterday)
+    metrics?.pd_ny_1h?.high > 0 && { price: metrics.pd_ny_1h.high, name: 'PD NY 1H High', color: '#10B981' },
+    metrics?.pd_ny_1h?.low > 0 && { price: metrics.pd_ny_1h.low, name: 'PD NY 1H Low', color: '#10B981' },
+    metrics?.pd_ny_1h?.poc > 0 && { price: metrics.pd_ny_1h.poc, name: 'PD NY 1H POC', color: '#34D399' },
     // Add Fibonacci levels
     ...fibLevels,
     // Add all 4 IB levels with names (cached until 17:00 ET)
@@ -3941,12 +4028,15 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
 
                       const candleWidth = 100 / allCandles.length; // Percentage width per candle
 
-                      // Get visible time range
+                      // Get candle interval based on current timeframe
+                      const candleInterval = volumeTimeframe === '5m' ? 300 : volumeTimeframe === '15m' ? 900 : volumeTimeframe === '30m' ? 1800 : 3600;
+
+                      // Get visible time range - use full candle interval, not hardcoded 300
                       const visibleCandles = allCandles.filter(c => c.ts > 0);
                       const minTs = visibleCandles.length > 0 ? Math.min(...visibleCandles.map(c => c.ts)) : 0;
-                      const maxTs = visibleCandles.length > 0 ? Math.max(...visibleCandles.map(c => c.ts)) + 300 : 0;
+                      const maxTs = visibleCandles.length > 0 ? Math.max(...visibleCandles.map(c => c.ts)) + candleInterval * 2 : 0;
 
-                      // Filter trades within visible range
+                      // Filter trades within visible range - include ALL trades in the time range
                       const visibleTrades = bigTrades.filter(t => t.ts >= minTs && t.ts <= maxTs);
 
                       // Calculate notional value per contract (GC = 100 oz)
@@ -3965,7 +4055,7 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                             left: 0,
                             width: '100%',
                             height: chartHeight,
-                            pointerEvents: 'none',
+                            pointerEvents: 'none',  // SVG itself doesn't capture events
                             zIndex: 25,
                             overflow: 'visible'
                           }}
@@ -4013,10 +4103,14 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                           {visibleTrades.map((trade, i) => {
                             // Find which candle this trade belongs to (by timestamp)
                             const tradeTime = trade.ts;
-                            const candleIndex = allCandles.findIndex(c => {
+                            const candleIndex = allCandles.findIndex((c, idx) => {
                               if (!c.ts) return false;
                               const candleStart = c.ts;
-                              const candleEnd = candleStart + 5 * 60; // 5 min candle in seconds
+                              // For the last candle (current), extend the window to capture all recent trades
+                              const isLastCandle = idx === allCandles.length - 1;
+                              const candleEnd = isLastCandle
+                                ? candleStart + candleInterval * 2 // Double interval for current candle
+                                : candleStart + candleInterval; // Use correct interval for completed candles
                               return tradeTime >= candleStart && tradeTime < candleEnd;
                             });
 
@@ -4047,9 +4141,9 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                             return (
                               <g
                                 key={tradeId}
-                                style={{ cursor: 'pointer' }}
-                                onMouseEnter={() => setHoveredBigTrade(tradeId)}
-                                onMouseLeave={() => setHoveredBigTrade(null)}
+                                style={{ cursor: 'pointer', pointerEvents: 'all' }}
+                                onMouseEnter={() => handleBigTradeHover(tradeId)}
+                                onMouseLeave={handleBigTradeLeave}
                               >
                                 {/* Invisible hitbox for better click detection */}
                                 <circle
@@ -4057,7 +4151,7 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                                   cy={y}
                                   r={radius + 15}
                                   fill="transparent"
-                                  style={{ pointerEvents: 'all', cursor: 'pointer' }}
+                                  style={{ pointerEvents: 'visiblePainted', cursor: 'pointer' }}
                                 />
                                 {/* Outer glow ring */}
                                 <circle

@@ -286,6 +286,8 @@ state = {
     'pd_high': 0.0,
     'pd_low': 0.0,
     'pdpoc': 0.0,
+    'pd_vah': 0.0,
+    'pd_val': 0.0,
     'pd_open': 0.0,
     'pd_close': 0.0,
     'pd_loaded': False,
@@ -766,6 +768,166 @@ def get_historical_big_trades_cached(contract=None, max_age_seconds=300):
         cache['contract'] = contract
 
     return cache['trades']
+
+def fetch_historical_big_trades_from_databento():
+    """Fetch historical big trades from Databento to populate cache for 1H chart"""
+    global state, front_month_instrument_id, ACTIVE_CONTRACT, historical_big_trades_cache
+
+    config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
+    if config.get('is_spot', False):
+        print("⏭️ Skipping Databento big trades fetch for spot contract")
+        return
+
+    if not HAS_DATABENTO or not API_KEY:
+        print("⚠️ Cannot fetch historical big trades - no Databento connection")
+        return
+
+    try:
+        print(f"📊 Fetching historical big trades for {config['name']} from Databento (last 24 hours)...")
+
+        et_now = get_et_now()
+        symbol = config['symbol']
+        price_min = config['price_min']
+        price_max = config['price_max']
+
+        # Fetch last 24 hours of trades to cover 22+ 1H candles
+        start_time = et_now - timedelta(hours=26)  # Extra buffer
+        end_time = et_now - timedelta(minutes=25)  # Databento has ~25 min delay
+
+        # Convert to UTC timestamps
+        start_ts = start_time.strftime('%Y-%m-%dT%H:%M:%SZ')
+        end_ts = end_time.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+        print(f"   Querying trades from {start_ts} to {end_ts}...")
+
+        client = db.Historical(key=API_KEY)
+        data = client.timeseries.get_range(
+            dataset='GLBX.MDP3',
+            symbols=[symbol],
+            stype_in='parent',
+            schema='trades',
+            start=start_ts,
+            end=end_ts
+        )
+
+        records = list(data)
+        print(f"   Got {len(records)} trade records")
+
+        if not records:
+            return
+
+        # Find front month instrument (most trades)
+        by_instrument = {}
+        for r in records:
+            iid = r.instrument_id
+            by_instrument[iid] = by_instrument.get(iid, 0) + 1
+
+        front_month_iid = max(by_instrument.items(), key=lambda x: x[1])[0]
+        print(f"   Front month instrument ID: {front_month_iid}")
+
+        # Calculate 90th percentile threshold from this data
+        trade_sizes = []
+        for r in records:
+            if r.instrument_id != front_month_iid:
+                continue
+            size = getattr(r, 'size', 1)
+            trade_sizes.append(size)
+
+        if len(trade_sizes) < 100:
+            threshold = 5  # Default
+        else:
+            sorted_sizes = sorted(trade_sizes)
+            p90_idx = int(len(sorted_sizes) * 0.90)
+            threshold = max(5, sorted_sizes[p90_idx])  # Minimum threshold of 5
+
+        print(f"   Calculated P90 threshold: {threshold} contracts (from {len(trade_sizes)} trades)")
+
+        # Extract big trades (above threshold)
+        big_trades = []
+        for r in records:
+            if r.instrument_id != front_month_iid:
+                continue
+
+            size = getattr(r, 'size', 1)
+            if size < threshold:
+                continue
+
+            p = r.price / 1e9 if r.price > 1e6 else r.price
+            if p < price_min or p > price_max:
+                continue
+
+            # Determine side from aggressor field
+            side_code = getattr(r, 'side', None)
+            if side_code == 'A':
+                side = 'BUY'
+            elif side_code == 'B':
+                side = 'SELL'
+            else:
+                side = 'BUY' if r.price > 0 else 'SELL'  # Fallback
+
+            ts_ns = r.ts_event if hasattr(r, 'ts_event') else getattr(r, 'ts_recv', 0)
+            ts_sec = ts_ns / 1e9
+
+            big_trades.append({
+                'ts': ts_sec,
+                'price': p,
+                'size': size,
+                'side': side,
+                'delta_impact': size if side == 'BUY' else -size,
+                'date': datetime.fromtimestamp(ts_sec).strftime('%Y-%m-%d')
+            })
+
+        print(f"   Found {len(big_trades)} big trades (>= {threshold} contracts)")
+
+        # Update the historical cache directly
+        historical_big_trades_cache['trades'] = sorted(big_trades, key=lambda x: x['ts'], reverse=True)
+        historical_big_trades_cache['last_loaded'] = time.time()
+        historical_big_trades_cache['contract'] = ACTIVE_CONTRACT
+
+        # Also save to disk cache
+        if big_trades:
+            today_str = et_now.strftime('%Y-%m-%d')
+            save_big_trade_to_cache(big_trades, contract=ACTIVE_CONTRACT, date_str=today_str)
+
+        print(f"✅ Loaded {len(big_trades)} historical big trades covering ~24 hours")
+
+    except Exception as e:
+        print(f"❌ Error fetching historical big trades: {e}")
+        import traceback
+        traceback.print_exc()
+
+def save_big_trade_to_cache(trades, contract=None, date_str=None):
+    """Save multiple trades to cache file"""
+    global ACTIVE_CONTRACT
+    if contract is None:
+        contract = ACTIVE_CONTRACT
+    if date_str is None:
+        date_str = datetime.now(pytz.timezone('America/New_York')).strftime('%Y-%m-%d')
+
+    try:
+        os.makedirs(BIG_TRADES_CACHE_DIR, exist_ok=True)
+        cache_path = get_big_trades_cache_path(contract, date_str)
+
+        # Load existing data
+        existing = []
+        if os.path.exists(cache_path):
+            with open(cache_path, 'r') as f:
+                data = json.load(f)
+                existing = data.get('trades', [])
+
+        # Merge and deduplicate by timestamp
+        seen_ts = set(t['ts'] for t in existing)
+        for t in trades:
+            if t['ts'] not in seen_ts:
+                existing.append(t)
+                seen_ts.add(t['ts'])
+
+        # Save
+        with open(cache_path, 'w') as f:
+            json.dump({'trades': existing}, f)
+
+    except Exception as e:
+        print(f"⚠️ Error saving big trades to cache: {e}")
 
 # ============================================
 # ZONE PARTICIPATION ENGINE
@@ -2436,6 +2598,36 @@ def fetch_pd_levels():
             # Fallback to typical price if no volume data
             pdpoc = (pd_high + pd_low + pd_close) / 3
 
+        # Calculate PD VAH/VAL (70% of volume around POC)
+        pd_vah = pdpoc
+        pd_val = pdpoc
+        if volume_profile:
+            sorted_prices = sorted(volume_profile.keys())
+            total_volume = sum(volume_profile.values())
+            poc_idx = sorted_prices.index(pdpoc) if pdpoc in sorted_prices else len(sorted_prices) // 2
+
+            # Start from POC and expand outward until 70% of volume captured
+            vah_idx = poc_idx
+            val_idx = poc_idx
+            current_vol = volume_profile.get(sorted_prices[poc_idx], 0) if poc_idx < len(sorted_prices) else 0
+            target_vol = total_volume * 0.70
+
+            while current_vol < target_vol and (vah_idx < len(sorted_prices) - 1 or val_idx > 0):
+                vol_above = volume_profile.get(sorted_prices[vah_idx + 1], 0) if vah_idx < len(sorted_prices) - 1 else 0
+                vol_below = volume_profile.get(sorted_prices[val_idx - 1], 0) if val_idx > 0 else 0
+
+                if vol_above >= vol_below and vah_idx < len(sorted_prices) - 1:
+                    vah_idx += 1
+                    current_vol += vol_above
+                elif val_idx > 0:
+                    val_idx -= 1
+                    current_vol += vol_below
+                else:
+                    break
+
+            pd_vah = sorted_prices[vah_idx] if vah_idx < len(sorted_prices) else pd_high
+            pd_val = sorted_prices[val_idx] if val_idx >= 0 else pd_low
+
         print(f"   Front month (ID {iid}): {data['count']} trades")
 
         # Check if contract changed during fetch - don't overwrite BTC-SPOT PD levels
@@ -2450,10 +2642,12 @@ def fetch_pd_levels():
             state['pd_open'] = pd_open
             state['pd_close'] = pd_close
             state['pdpoc'] = pdpoc
+            state['pd_vah'] = pd_vah
+            state['pd_val'] = pd_val
             state['pd_loaded'] = True
             state['pd_date_range'] = f"{session_start_date.strftime('%b %d')} 18:00 - {session_end_date.strftime('%b %d')} 17:00 ET"
 
-        print(f"✅ PD Levels loaded: High=${pd_high:.2f}, Low=${pd_low:.2f}, POC=${pdpoc:.2f}")
+        print(f"✅ PD Levels loaded: High=${pd_high:.2f}, Low=${pd_low:.2f}, POC=${pdpoc:.2f}, VAH=${pd_vah:.2f}, VAL=${pd_val:.2f}")
 
         # Also fetch PD US IB and NY 1H from the same session data
         fetch_pd_ny_sessions(records, iid, price_min, price_max, config.get('tick_size', 0.10), session_end_date)
@@ -10113,7 +10307,7 @@ class LiveDataHandler(BaseHTTPRequestHandler):
         ib_mid = (ib_high + ib_low) / 2 if ib_high > 0 and ib_low > 0 else 0
 
         response = {
-            'version': '15.9.13',  # v15.9.13: Fetch PD US IB and NY 1H from historical data at startup
+            'version': '15.9.14',  # v15.9.14: Add PD VAH/VAL, Day VAH/VAL to API + historical big trades fetch
             'ticker': s['ticker'],
             'contract': s['contract'],
             'contract_name': s['contract_name'],
@@ -10155,6 +10349,8 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             'pdpoc': s['pdpoc'],
             'pd_high': s['pd_high'],
             'pd_low': s['pd_low'],
+            'pd_vah': s.get('pd_vah', 0),
+            'pd_val': s.get('pd_val', 0),
             'pd_open': s['pd_open'],
             'pd_close': s['pd_close'],
             'pd_date_range': s['pd_date_range'],
@@ -10174,6 +10370,11 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             'day_open': s['day_open'] if s['day_open'] > 0 else 0,
             'day_high': s['day_high'] if s['day_high'] > 0 else 0,
             'day_low': s['day_low'] if s['day_low'] < 999999 else 0,
+
+            # Day Value Area (from TPO profile)
+            'day_vah': tpo_state['day'].get('vah', 0),
+            'day_val': tpo_state['day'].get('val', 0),
+            'day_poc': tpo_state['day'].get('poc', 0),
 
             # Weekly Open (Sunday 18:00 ET)
             'weekly_open': s['weekly_open'] if s['weekly_open'] > 0 else 0,
@@ -10758,6 +10959,15 @@ def preload_market_overview():
         except Exception as e:
             print(f"⚠️ Market overview preload failed: {e}")
 
+def preload_historical_big_trades():
+    """Background preload of historical big trades for 1H chart coverage"""
+    print("📊 Preloading historical big trades (for 1H chart coverage)...")
+    try:
+        fetch_historical_big_trades_from_databento()
+        print("✅ Historical big trades preloaded")
+    except Exception as e:
+        print(f"⚠️ Historical big trades preload failed: {e}")
+
 def main():
     print("=" * 60)
     print("  PROJECT HORIZON - LIVE FEED v2 (All Live Data)")
@@ -10779,6 +10989,10 @@ def main():
     # Fetch spot gold price in background (for GEX calculations)
     spot_thread = threading.Thread(target=fetch_spot_gold_price, daemon=True)
     spot_thread.start()
+
+    # Preload historical big trades in background (for 1H chart coverage)
+    big_trades_thread = threading.Thread(target=preload_historical_big_trades, daemon=True)
+    big_trades_thread.start()
 
     # Set stream_running before starting feed so the stream knows it should continue
     stream_running = True
