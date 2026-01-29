@@ -135,11 +135,11 @@ HIGH_IMPACT_EVENTS = [
     (2025, 12, 23, 8, 30, "PCE Inflation", "HIGH"),
 
     # ============= 2026 EVENTS =============
-    # FOMC Press Conferences (2:30 PM ET) - CRITICAL
-    (2026, 1, 29, 14, 30, "FOMC Press Conference", "CRITICAL"),  # Jan 29 - Powell speaks
+    # FOMC Press Conferences (2:30 PM ET) - CRITICAL (announcements on Wednesday)
+    (2026, 1, 28, 14, 30, "FOMC Press Conference", "CRITICAL"),  # Wed Jan 28 - Powell speaks
     (2026, 2, 7, 10, 0, "Fed Chair Powell Speaks", "CRITICAL"),  # Feb 7 - Powell speaks
     (2026, 2, 12, 15, 0, "U.S. President Trump Speaks", "HIGH"),  # Feb 12 - Trump speaks
-    (2026, 3, 19, 14, 30, "FOMC Press Conference", "CRITICAL"),  # Corrected from Mar 18
+    (2026, 3, 18, 14, 30, "FOMC Press Conference", "CRITICAL"),  # Wed Mar 18
     (2026, 5, 6, 14, 30, "FOMC Press Conference", "CRITICAL"),
     (2026, 6, 17, 14, 30, "FOMC Press Conference", "CRITICAL"),
     (2026, 7, 29, 14, 30, "FOMC Press Conference", "CRITICAL"),
