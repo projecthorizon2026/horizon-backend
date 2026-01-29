@@ -428,8 +428,8 @@ tpo_state = {
         'a_high': 0.0, 'a_low': 999999.0,
         'b_high': 0.0, 'b_low': 999999.0,
         'c_high': 0.0, 'c_low': 999999.0,
-        'ab_overlap': 0.0,
-        'bc_overlap': 0.0,
+        'ab_overlap': None,  # None until A and B periods both complete
+        'bc_overlap': None,  # None until B and C periods both complete
         'day_type': 'developing',
         'day_type_confidence': 0,
         'day_type_scores': {},
@@ -509,7 +509,7 @@ tpo_state = {
             'open_direction': None,
             'a_high': 0.0, 'a_low': 999999.0,
             'b_high': 0.0, 'b_low': 999999.0,
-            'ab_overlap': 0.0,
+            'ab_overlap': None,  # None until both A and B periods complete
         },
         'tpo4_us_pm': {
             'profiles': {},
@@ -1995,23 +1995,25 @@ def get_session_period_index(session_key, current_hhmm):
 def calculate_overlap(range1, range2):
     """Calculate overlap percentage between two price ranges
     range1, range2: tuples of (high, low)
-    Returns: overlap percentage (0-100)
+    Returns: overlap percentage (0-100) or None if ranges not established
     """
     h1, l1 = range1
     h2, l2 = range2
 
+    # Return None if either range hasn't started (not 0, which implies no overlap)
     if h1 <= 0 or l1 >= 999999 or h2 <= 0 or l2 >= 999999:
-        return 0.0
-
-    overlap_high = min(h1, h2)
-    overlap_low = max(l1, l2)
-    overlap = max(0, overlap_high - overlap_low)
+        return None
 
     range1_size = h1 - l1
     range2_size = h2 - l2
 
+    # Return None if ranges are invalid (not calculated yet)
     if range1_size <= 0 or range2_size <= 0:
-        return 0.0
+        return None
+
+    overlap_high = min(h1, h2)
+    overlap_low = max(l1, l2)
+    overlap = max(0, overlap_high - overlap_low)
 
     # Use smaller range as denominator for overlap %
     smaller_range = min(range1_size, range2_size)
@@ -2390,7 +2392,7 @@ def reset_session_profile(session_key):
         session['a_low'] = 999999.0
         session['b_high'] = 0.0
         session['b_low'] = 999999.0
-        session['ab_overlap'] = 0.0
+        session['ab_overlap'] = None
 
 def reset_tpo_for_new_day():
     """Reset TPO data for new trading day (18:00 ET)"""
@@ -2443,8 +2445,8 @@ def reset_tpo_for_new_day():
     day['b_low'] = 999999.0
     day['c_high'] = 0.0
     day['c_low'] = 999999.0
-    day['ab_overlap'] = 0.0
-    day['bc_overlap'] = 0.0
+    day['ab_overlap'] = None
+    day['bc_overlap'] = None
     day['day_type'] = 'developing'
     day['day_type_confidence'] = 0
     day['day_type_scores'] = {}
@@ -10081,7 +10083,8 @@ class LiveDataHandler(BaseHTTPRequestHandler):
                         sessions_json[session_key]['open_type'] = session_data.get('open_type', 'developing')
                         sessions_json[session_key]['open_type_confidence'] = session_data.get('open_type_confidence', 0)
                         sessions_json[session_key]['open_direction'] = session_data.get('open_direction')
-                        sessions_json[session_key]['ab_overlap'] = round(session_data.get('ab_overlap', 0), 1)
+                        ab_val = session_data.get('ab_overlap')
+                        sessions_json[session_key]['ab_overlap'] = round(ab_val, 1) if ab_val is not None else None
                         a_high = session_data.get('a_high', 0)
                         a_low = session_data.get('a_low', 999999)
                         b_high = session_data.get('b_high', 0)
@@ -10168,9 +10171,9 @@ class LiveDataHandler(BaseHTTPRequestHandler):
                     'open_price': day['open_price'],
                     'rth_open': day.get('rth_open', 0),
 
-                    # Day Overlaps
-                    'ab_overlap': round(day['ab_overlap'], 1),
-                    'bc_overlap': round(day['bc_overlap'], 1),
+                    # Day Overlaps (None if periods not yet started)
+                    'ab_overlap': round(day['ab_overlap'], 1) if day['ab_overlap'] is not None else None,
+                    'bc_overlap': round(day['bc_overlap'], 1) if day['bc_overlap'] is not None else None,
 
                     # Day Type Classification
                     'day_type': day['day_type'],
