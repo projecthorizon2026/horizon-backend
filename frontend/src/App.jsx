@@ -21206,16 +21206,18 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
         <GEXPanel gexData={gexData} currentPrice={metrics.current_price} />
       </div>
 
-      {/* Contract Rollover Indicator */}
-      {metrics.rollover && (
+      {/* Contract Rollover Indicator - Always show */}
+      {(() => {
+        const rollover = metrics.rollover || {};
+        return (
         <div style={{
           marginTop: 20,
           padding: 16,
           background: 'linear-gradient(135deg, rgba(30,30,35,0.95) 0%, rgba(20,20,25,0.98) 100%)',
           borderRadius: 12,
           border: `1px solid ${
-            metrics.rollover.roll_signal === 'ROLL' ? '#ef4444' :
-            metrics.rollover.roll_signal === 'CONSIDER' ? '#f59e0b' : '#333'
+            rollover.roll_signal === 'ROLL' ? '#ef4444' :
+            rollover.roll_signal === 'CONSIDER' ? '#f59e0b' : '#333'
           }`
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -21228,17 +21230,17 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
               borderRadius: 6,
               fontSize: 11,
               fontWeight: 700,
-              background: metrics.rollover.roll_signal === 'ROLL' ? 'rgba(239,68,68,0.2)' :
-                         metrics.rollover.roll_signal === 'CONSIDER' ? 'rgba(245,158,11,0.2)' : 'rgba(34,197,94,0.2)',
-              color: metrics.rollover.roll_signal === 'ROLL' ? '#ef4444' :
-                     metrics.rollover.roll_signal === 'CONSIDER' ? '#f59e0b' : '#22c55e',
+              background: rollover.roll_signal === 'ROLL' ? 'rgba(239,68,68,0.2)' :
+                         rollover.roll_signal === 'CONSIDER' ? 'rgba(245,158,11,0.2)' : 'rgba(34,197,94,0.2)',
+              color: rollover.roll_signal === 'ROLL' ? '#ef4444' :
+                     rollover.roll_signal === 'CONSIDER' ? '#f59e0b' : '#22c55e',
               border: `1px solid ${
-                metrics.rollover.roll_signal === 'ROLL' ? '#ef4444' :
-                metrics.rollover.roll_signal === 'CONSIDER' ? '#f59e0b' : '#22c55e'
+                rollover.roll_signal === 'ROLL' ? '#ef4444' :
+                rollover.roll_signal === 'CONSIDER' ? '#f59e0b' : '#22c55e'
               }40`
             }}>
-              {metrics.rollover.roll_signal === 'ROLL' ? '🔄 ROLL NOW' :
-               metrics.rollover.roll_signal === 'CONSIDER' ? '⚠️ CONSIDER ROLLING' : '✓ HOLD'}
+              {rollover.roll_signal === 'ROLL' ? '🔄 ROLL NOW' :
+               rollover.roll_signal === 'CONSIDER' ? '⚠️ CONSIDER ROLLING' : '✓ HOLD'}
             </div>
           </div>
 
@@ -21247,34 +21249,34 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 10, color: '#888', marginBottom: 4 }}>CURRENT</div>
               <div style={{ fontSize: 14, fontWeight: 700, color: '#00aaff' }}>
-                {metrics.rollover.front_month || metrics.contract || 'GCJ26'}
+                {rollover.front_month || metrics.contract || 'GCG26'}
               </div>
               <div style={{ fontSize: 9, color: '#666', marginTop: 2 }}>
-                {metrics.rollover.front_month_name || metrics.contract_name || ''}
+                {rollover.front_month_name || 'Gold Feb 2026'}
               </div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: metrics.rollover.front_month_oi > 0 ? '#fff' : '#555', marginTop: 8, fontFamily: 'monospace' }}>
-                {metrics.rollover.front_month_oi > 0 ? metrics.rollover.front_month_oi.toLocaleString() : '—'}
+              <div style={{ fontSize: 18, fontWeight: 700, color: rollover.front_month_oi > 0 ? '#fff' : '#555', marginTop: 8, fontFamily: 'monospace' }}>
+                {rollover.front_month_oi > 0 ? rollover.front_month_oi.toLocaleString() : '—'}
               </div>
-              <div style={{ fontSize: 9, color: '#888' }}>{metrics.rollover.front_month_oi > 0 ? 'Open Interest' : 'OI @ Settlement'}</div>
+              <div style={{ fontSize: 9, color: '#888' }}>{rollover.front_month_oi > 0 ? 'Open Interest' : 'Loading OI...'}</div>
             </div>
 
             {/* Arrow & Ratio */}
             <div style={{ textAlign: 'center' }}>
               <div style={{
                 fontSize: 24,
-                color: metrics.rollover.oi_ratio >= 1 ? '#ef4444' :
-                       metrics.rollover.oi_ratio >= 0.75 ? '#f59e0b' : '#22c55e'
+                color: rollover.oi_ratio >= 1 ? '#ef4444' :
+                       rollover.oi_ratio >= 0.75 ? '#f59e0b' : '#22c55e'
               }}>
-                {metrics.rollover.oi_ratio >= 1 ? '⟹' : '→'}
+                {rollover.oi_ratio >= 1 ? '⟹' : '→'}
               </div>
               <div style={{
                 fontSize: 16,
                 fontWeight: 700,
-                color: metrics.rollover.oi_ratio >= 1 ? '#ef4444' :
-                       metrics.rollover.oi_ratio >= 0.75 ? '#f59e0b' : '#22c55e',
+                color: rollover.oi_ratio >= 1 ? '#ef4444' :
+                       rollover.oi_ratio >= 0.75 ? '#f59e0b' : '#22c55e',
                 fontFamily: 'monospace'
               }}>
-                {((metrics.rollover.oi_ratio || 0) * 100).toFixed(0)}%
+                {((rollover.oi_ratio || 0) * 100).toFixed(0)}%
               </div>
               <div style={{ fontSize: 8, color: '#666' }}>Next/Current</div>
             </div>
@@ -21282,16 +21284,16 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
             {/* Next Month */}
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 10, color: '#888', marginBottom: 4 }}>NEXT</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: metrics.rollover.oi_ratio >= 1 ? '#ef4444' : '#f59e0b' }}>
-                {metrics.rollover.next_month || 'GCJ26'}
+              <div style={{ fontSize: 14, fontWeight: 700, color: rollover.oi_ratio >= 1 ? '#ef4444' : '#f59e0b' }}>
+                {rollover.next_month || 'GCJ26'}
               </div>
               <div style={{ fontSize: 9, color: '#666', marginTop: 2 }}>
-                {metrics.rollover.next_month_name || ''}
+                {rollover.next_month_name || 'Gold Apr 2026'}
               </div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: metrics.rollover.next_month_oi > 0 ? '#fff' : '#555', marginTop: 8, fontFamily: 'monospace' }}>
-                {metrics.rollover.next_month_oi > 0 ? metrics.rollover.next_month_oi.toLocaleString() : '—'}
+              <div style={{ fontSize: 18, fontWeight: 700, color: rollover.next_month_oi > 0 ? '#fff' : '#555', marginTop: 8, fontFamily: 'monospace' }}>
+                {rollover.next_month_oi > 0 ? rollover.next_month_oi.toLocaleString() : '—'}
               </div>
-              <div style={{ fontSize: 9, color: '#888' }}>{metrics.rollover.next_month_oi > 0 ? 'Open Interest' : 'OI @ Settlement'}</div>
+              <div style={{ fontSize: 9, color: '#888' }}>{rollover.next_month_oi > 0 ? 'Open Interest' : 'Loading OI...'}</div>
             </div>
           </div>
 
@@ -21305,11 +21307,11 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
               position: 'relative'
             }}>
               <div style={{
-                width: `${Math.min((metrics.rollover.oi_ratio || 0) * 100, 100)}%`,
+                width: `${Math.min((rollover.oi_ratio || 0) * 100, 100)}%`,
                 height: '100%',
-                background: metrics.rollover.oi_ratio >= 1 ?
+                background: rollover.oi_ratio >= 1 ?
                   'linear-gradient(90deg, #ef4444, #dc2626)' :
-                  metrics.rollover.oi_ratio >= 0.75 ?
+                  rollover.oi_ratio >= 0.75 ?
                   'linear-gradient(90deg, #f59e0b, #d97706)' :
                   'linear-gradient(90deg, #22c55e, #16a34a)',
                 transition: 'width 0.5s ease'
@@ -21343,13 +21345,14 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
           </div>
 
           {/* Last Update */}
-          {metrics.rollover.last_update && (
+          {rollover.last_update && (
             <div style={{ marginTop: 12, textAlign: 'center', fontSize: 9, color: '#555' }}>
-              OI Updated: {metrics.rollover.last_update}
+              OI Updated: {rollover.last_update}
             </div>
           )}
         </div>
-      )}
+      );
+      })()}
     </div>
   );
 };

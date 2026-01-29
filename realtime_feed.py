@@ -4,7 +4,7 @@ PROJECT HORIZON - HTTP LIVE FEED v15.3.0
 All live data from Databento - no placeholders
 Memory optimized
 """
-APP_VERSION = "15.9.5"  # Memory optimized - skip bulk historical weeks only
+APP_VERSION = "15.9.6"  # Fix rollover OI - try Barchart first for actual OI
 
 # Suppress ALL deprecation warnings to avoid log flooding and memory issues
 import warnings
@@ -70,9 +70,12 @@ CONTRACT_CONFIG = {
         'front_month': 'GCG6',  # Databento format: GCG6 = Feb 2026
         'front_month_name': 'Gold Feb 2026',
         'front_month_display': 'GCG26',  # User display format
-        'active_month': 'GCJ6',  # Databento format: GCJ6 = Apr 2026 (what we trade)
+        'next_month': 'GCJ6',  # Databento format: GCJ6 = Apr 2026 (next contract)
+        'next_month_name': 'Gold Apr 2026',
+        'next_month_display': 'GCJ26',  # User display format
+        'active_month': 'GCJ6',  # What we're currently trading
         'active_month_name': 'Gold Apr 2026',
-        'active_month_display': 'GCJ26',  # User display format
+        'active_month_display': 'GCJ26',
         'name': 'Gold Apr 2026',
         'ticker': 'GC1!',
         'price_min': 2000,
@@ -84,6 +87,9 @@ CONTRACT_CONFIG = {
         'front_month': 'NQH6',  # Databento: NQH6 = Mar 2026
         'front_month_name': 'Nasdaq Mar 2026',
         'front_month_display': 'NQH26',
+        'next_month': 'NQM6',  # Jun 2026
+        'next_month_name': 'Nasdaq Jun 2026',
+        'next_month_display': 'NQM26',
         'active_month': 'NQH6',  # Same as front for NQ
         'active_month_name': 'Nasdaq Mar 2026',
         'active_month_display': 'NQH26',
@@ -1045,13 +1051,50 @@ def reset_tpo_for_new_day():
 # ============================================
 # FETCH CONTRACT ROLLOVER (OPEN INTEREST) DATA
 # ============================================
+def fetch_oi_from_barchart(symbol):
+    """Fetch Open Interest from Barchart website"""
+    try:
+        # Convert Databento symbol to Barchart format (GCG6 -> GCG26)
+        barchart_symbol = symbol[:-1] + '2' + symbol[-1:]  # GCG6 -> GCG26
+        url = f"https://www.barchart.com/futures/quotes/{barchart_symbol}/overview"
+
+        req = urllib.request.Request(url, headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as response:
+            html = response.read().decode('utf-8')
+
+            # Look for Open Interest in the page
+            import re
+            # Try multiple patterns
+            patterns = [
+                r'Open Interest[:\s]*</span>\s*<span[^>]*>([0-9,]+)',
+                r'openInterest["\s:]+([0-9,]+)',
+                r'"openInterest":"?([0-9,]+)',
+                r'Open Int[:\s]*([0-9,]+)',
+            ]
+
+            for pattern in patterns:
+                match = re.search(pattern, html, re.IGNORECASE)
+                if match:
+                    oi_str = match.group(1).replace(',', '')
+                    return int(oi_str)
+
+            print(f"   ⚠️ OI pattern not found for {barchart_symbol}")
+            return 0
+
+    except Exception as e:
+        print(f"   ⚠️ Barchart fetch error for {symbol}: {str(e)[:50]}")
+        return 0
+
 def fetch_rollover_data():
     """Fetch Open Interest for front and next month contracts to determine rollover timing"""
     global state, rollover_last_fetch, ACTIVE_CONTRACT
-
-    if not HAS_DATABENTO or not API_KEY:
-        print("⚠️  Cannot fetch rollover data - no Databento connection")
-        return
 
     # Throttle fetches to avoid API rate limits
     current_time = time.time()
@@ -1060,9 +1103,9 @@ def fetch_rollover_data():
 
     config = CONTRACT_CONFIG.get(ACTIVE_CONTRACT, CONTRACT_CONFIG['GC'])
     front_month = config['front_month']
-    next_month = config['next_month']
+    next_month = config.get('next_month', config['active_month'])  # Fallback to active_month
     front_month_name = config.get('front_month_name', config['name'])
-    next_month_name = config.get('next_month_name', '')
+    next_month_name = config.get('next_month_name', config.get('active_month_name', ''))
 
     # Initialize with defaults immediately so state is always valid
     with lock:
@@ -1083,75 +1126,59 @@ def fetch_rollover_data():
     try:
         print(f"📊 Fetching Open Interest for rollover: {front_month} vs {next_month}...")
 
-        client = db.Historical(key=API_KEY)
-        et_tz = pytz.timezone('America/New_York')
-        et_now = datetime.now(et_tz)
-
-        # Fetch last 7 days to ensure we get the most recent OI data (OI only published at daily settlement)
-        start_date = (et_now - timedelta(days=7)).strftime('%Y-%m-%d')
-        end_date = (et_now + timedelta(days=1)).strftime('%Y-%m-%d')  # Include today
-
         front_oi = 0
         next_oi = 0
 
-        # Use daily OHLCV to get volume (correlates with OI during rollover)
-        # Volume is a reliable proxy when OI data isn't available
-        try:
-            # Fetch daily bars for front month
-            front_data = client.timeseries.get_range(
-                dataset='GLBX.MDP3',
-                schema='ohlcv-1d',
-                stype_in='parent',
-                symbols=[front_month],
-                start=start_date,
-                end=end_date
-            )
+        # First try to fetch actual OI from Barchart
+        print("   🌐 Trying Barchart for actual OI...")
+        front_oi = fetch_oi_from_barchart(front_month)
+        next_oi = fetch_oi_from_barchart(next_month)
 
-            # Get cumulative volume as proxy for activity/OI
-            total_volume = 0
-            for record in front_data:
-                if hasattr(record, 'volume') and record.volume > 0:
-                    total_volume += record.volume
-                # Also check for open_interest if available
-                if hasattr(record, 'open_interest') and record.open_interest > 0:
-                    front_oi = record.open_interest
+        # If Barchart failed, fallback to Databento volume
+        if front_oi == 0 or next_oi == 0:
+            if HAS_DATABENTO and API_KEY:
+                print("   📊 Falling back to Databento volume...")
+                client = db.Historical(key=API_KEY)
+                et_tz = pytz.timezone('America/New_York')
+                et_now = datetime.now(et_tz)
 
-            # Use volume as OI proxy if no OI found
-            if front_oi == 0 and total_volume > 0:
-                front_oi = total_volume
+                start_date = (et_now - timedelta(days=7)).strftime('%Y-%m-%d')
+                end_date = (et_now + timedelta(days=1)).strftime('%Y-%m-%d')
 
-            print(f"   📈 {front_month}: Vol/OI={front_oi:,}")
+                if front_oi == 0:
+                    try:
+                        front_data = client.timeseries.get_range(
+                            dataset='GLBX.MDP3',
+                            schema='ohlcv-1d',
+                            stype_in='parent',
+                            symbols=[front_month],
+                            start=start_date,
+                            end=end_date
+                        )
+                        for record in front_data:
+                            if hasattr(record, 'volume') and record.volume > 0:
+                                front_oi += record.volume
+                    except Exception as e:
+                        print(f"   ⚠️ Front month Databento error: {str(e)[:50]}")
 
-        except Exception as e:
-            print(f"   ⚠️ Front month fetch error: {str(e)[:80]}")
+                if next_oi == 0:
+                    try:
+                        next_data = client.timeseries.get_range(
+                            dataset='GLBX.MDP3',
+                            schema='ohlcv-1d',
+                            stype_in='parent',
+                            symbols=[next_month],
+                            start=start_date,
+                            end=end_date
+                        )
+                        for record in next_data:
+                            if hasattr(record, 'volume') and record.volume > 0:
+                                next_oi += record.volume
+                    except Exception as e:
+                        print(f"   ⚠️ Next month Databento error: {str(e)[:50]}")
 
-        try:
-            # Fetch daily bars for next month
-            next_data = client.timeseries.get_range(
-                dataset='GLBX.MDP3',
-                schema='ohlcv-1d',
-                stype_in='parent',
-                symbols=[next_month],
-                start=start_date,
-                end=end_date
-            )
-
-            # Get cumulative volume as proxy for activity/OI
-            total_volume = 0
-            for record in next_data:
-                if hasattr(record, 'volume') and record.volume > 0:
-                    total_volume += record.volume
-                if hasattr(record, 'open_interest') and record.open_interest > 0:
-                    next_oi = record.open_interest
-
-            # Use volume as OI proxy if no OI found
-            if next_oi == 0 and total_volume > 0:
-                next_oi = total_volume
-
-            print(f"   📈 {next_month}: Vol/OI={next_oi:,}")
-
-        except Exception as e:
-            print(f"   ⚠️ Next month fetch error: {str(e)[:80]}")
+        print(f"   📈 {front_month}: OI={front_oi:,}")
+        print(f"   📈 {next_month}: OI={next_oi:,}")
 
         # Calculate rollover metrics
         oi_ratio = 0.0
