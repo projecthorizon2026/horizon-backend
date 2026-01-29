@@ -2455,10 +2455,106 @@ def fetch_pd_levels():
 
         print(f"✅ PD Levels loaded: High=${pd_high:.2f}, Low=${pd_low:.2f}, POC=${pdpoc:.2f}")
 
+        # Also fetch PD US IB and NY 1H from the same session data
+        fetch_pd_ny_sessions(records, iid, price_min, price_max, config.get('tick_size', 0.10), session_end_date)
+
     except Exception as e:
         print(f"❌ Error fetching PD levels: {e}")
         import traceback
         traceback.print_exc()
+
+def fetch_pd_ny_sessions(records, front_month_iid, price_min, price_max, tick_size, session_end_date):
+    """Extract PD US IB and NY 1H from the already-fetched historical records"""
+    global state
+
+    try:
+        # US IB: 08:20-09:30 ET = 13:20-14:30 UTC
+        # NY 1H: 09:30-10:30 ET = 14:30-15:30 UTC
+        # session_end_date is the calendar date when the session ended (17:00 ET)
+        # So US IB and NY 1H happened on session_end_date itself
+
+        from datetime import datetime
+        import pytz
+        utc = pytz.UTC
+
+        # Calculate UTC timestamps for US IB and NY 1H on the end date
+        us_ib_start = datetime.strptime(f"{session_end_date} 13:20:00", "%Y-%m-%d %H:%M:%S").replace(tzinfo=utc)
+        us_ib_end = datetime.strptime(f"{session_end_date} 14:30:00", "%Y-%m-%d %H:%M:%S").replace(tzinfo=utc)
+        ny_1h_start = datetime.strptime(f"{session_end_date} 14:30:00", "%Y-%m-%d %H:%M:%S").replace(tzinfo=utc)
+        ny_1h_end = datetime.strptime(f"{session_end_date} 15:30:00", "%Y-%m-%d %H:%M:%S").replace(tzinfo=utc)
+
+        us_ib_start_ns = int(us_ib_start.timestamp() * 1e9)
+        us_ib_end_ns = int(us_ib_end.timestamp() * 1e9)
+        ny_1h_start_ns = int(ny_1h_start.timestamp() * 1e9)
+        ny_1h_end_ns = int(ny_1h_end.timestamp() * 1e9)
+
+        # Filter records for each session
+        us_ib_data = {'high': 0.0, 'low': float('inf'), 'volume_profile': {}, 'vwap_num': 0.0, 'vwap_den': 0.0}
+        ny_1h_data = {'high': 0.0, 'low': float('inf'), 'volume_profile': {}, 'vwap_num': 0.0, 'vwap_den': 0.0}
+
+        for r in records:
+            if r.instrument_id != front_month_iid:
+                continue
+
+            p = r.price / 1e9 if r.price > 1e6 else r.price
+            size = getattr(r, 'size', 1)
+            ts_ns = r.ts_event if hasattr(r, 'ts_event') else getattr(r, 'ts_recv', 0)
+
+            if p < price_min or p > price_max:
+                continue
+
+            price_level = round(p / tick_size) * tick_size
+
+            # US IB (08:20-09:30 ET)
+            if us_ib_start_ns <= ts_ns < us_ib_end_ns:
+                if p > us_ib_data['high']:
+                    us_ib_data['high'] = p
+                if p < us_ib_data['low']:
+                    us_ib_data['low'] = p
+                us_ib_data['vwap_num'] += p * size
+                us_ib_data['vwap_den'] += size
+                us_ib_data['volume_profile'][price_level] = us_ib_data['volume_profile'].get(price_level, 0) + size
+
+            # NY 1H (09:30-10:30 ET)
+            if ny_1h_start_ns <= ts_ns < ny_1h_end_ns:
+                if p > ny_1h_data['high']:
+                    ny_1h_data['high'] = p
+                if p < ny_1h_data['low']:
+                    ny_1h_data['low'] = p
+                ny_1h_data['vwap_num'] += p * size
+                ny_1h_data['vwap_den'] += size
+                ny_1h_data['volume_profile'][price_level] = ny_1h_data['volume_profile'].get(price_level, 0) + size
+
+        # Calculate POC and VWAP for each session
+        with lock:
+            # US IB
+            if us_ib_data['high'] > 0 and us_ib_data['low'] < float('inf'):
+                us_ib_vwap = us_ib_data['vwap_num'] / us_ib_data['vwap_den'] if us_ib_data['vwap_den'] > 0 else 0
+                us_ib_poc = max(us_ib_data['volume_profile'].items(), key=lambda x: x[1])[0] if us_ib_data['volume_profile'] else 0
+                state['pd_us_ib'] = {
+                    'high': us_ib_data['high'],
+                    'low': us_ib_data['low'],
+                    'mid': (us_ib_data['high'] + us_ib_data['low']) / 2,
+                    'poc': us_ib_poc,
+                    'vwap': us_ib_vwap
+                }
+                print(f"✅ PD US IB: H=${us_ib_data['high']:.2f}, L=${us_ib_data['low']:.2f}, POC=${us_ib_poc:.2f}")
+
+            # NY 1H
+            if ny_1h_data['high'] > 0 and ny_1h_data['low'] < float('inf'):
+                ny_1h_vwap = ny_1h_data['vwap_num'] / ny_1h_data['vwap_den'] if ny_1h_data['vwap_den'] > 0 else 0
+                ny_1h_poc = max(ny_1h_data['volume_profile'].items(), key=lambda x: x[1])[0] if ny_1h_data['volume_profile'] else 0
+                state['pd_ny_1h'] = {
+                    'high': ny_1h_data['high'],
+                    'low': ny_1h_data['low'],
+                    'mid': (ny_1h_data['high'] + ny_1h_data['low']) / 2,
+                    'poc': ny_1h_poc,
+                    'vwap': ny_1h_vwap
+                }
+                print(f"✅ PD NY 1H: H=${ny_1h_data['high']:.2f}, L=${ny_1h_data['low']:.2f}, POC=${ny_1h_poc:.2f}")
+
+    except Exception as e:
+        print(f"⚠️ Error fetching PD NY sessions: {e}")
 
 def fetch_all_ibs():
     """Fetch historical data for all 4 IBs that have already ended in current trading day"""
@@ -10017,7 +10113,7 @@ class LiveDataHandler(BaseHTTPRequestHandler):
         ib_mid = (ib_high + ib_low) / 2 if ib_high > 0 and ib_low > 0 else 0
 
         response = {
-            'version': '15.9.12',  # v15.9.12: Added day_vwap, us_ib_vwap, ny_1h_vwap, IB POC/VWAP, PD NY sessions
+            'version': '15.9.13',  # v15.9.13: Fetch PD US IB and NY 1H from historical data at startup
             'ticker': s['ticker'],
             'contract': s['contract'],
             'contract_name': s['contract_name'],
