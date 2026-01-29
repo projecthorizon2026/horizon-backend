@@ -1709,33 +1709,33 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
   // Get current session name for VWAP label
   const currentSessionName = metrics?.current_session_name || metrics?.sessionId || 'Session';
 
-  // Get current ET time for (PD) labels
+  // Get current ET time for (pd) labels
   const etNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const etTimeVal = etNow.getHours() * 100 + etNow.getMinutes();
 
-  // All 4 IB levels with names - show (PD) if before session starts today
+  // All 4 IB levels with names - show (pd) if before session starts today
   // Trading day starts at 18:00 ET, so for evening sessions, check if we're past the session
-  // For morning sessions (London, US, NY), show (PD) if we're in the evening before they've occurred
+  // For morning sessions (London, US, NY), show (pd) if we're in the evening before they've occurred
   const isEveningSession = etTimeVal >= 1800 || etTimeVal < 300; // 18:00 ET to 03:00 ET next day
   const allIBLevels = [
-    // Japan IB (19:00-20:00 ET) - (PD) if before 19:00 in evening, or anytime after midnight until Japan IB ends
-    metrics?.ibs?.japan?.high > 0 && { price: metrics.ibs.japan.high, name: etTimeVal < 1900 && etTimeVal >= 1800 ? 'Japan IB High (PD)' : 'Japan IB High', color: '#9370DB' },
-    metrics?.ibs?.japan?.low > 0 && metrics?.ibs?.japan?.low < 999999 && { price: metrics.ibs.japan.low, name: etTimeVal < 1900 && etTimeVal >= 1800 ? 'Japan IB Low (PD)' : 'Japan IB Low', color: '#9370DB' },
-    metrics?.ibs?.japan?.poc > 0 && { price: metrics.ibs.japan.poc, name: etTimeVal < 1900 && etTimeVal >= 1800 ? 'Japan IB POC (PD)' : 'Japan IB POC', color: '#B8A3D9' },
-    // London IB (03:00-04:00 ET) - (PD) if before 03:00
-    metrics?.ibs?.london?.high > 0 && { price: metrics.ibs.london.high, name: etTimeVal < 300 || etTimeVal >= 1800 ? 'London IB High (PD)' : 'London IB High', color: '#a855f7' },
-    metrics?.ibs?.london?.low > 0 && metrics?.ibs?.london?.low < 999999 && { price: metrics.ibs.london.low, name: etTimeVal < 300 || etTimeVal >= 1800 ? 'London IB Low (PD)' : 'London IB Low', color: '#a855f7' },
-    metrics?.ibs?.london?.poc > 0 && { price: metrics.ibs.london.poc, name: etTimeVal < 300 || etTimeVal >= 1800 ? 'London IB POC (PD)' : 'London IB POC', color: '#C084FC' },
-    // US IB (08:20-09:30 ET) - (PD) if before 08:20
-    metrics?.ibs?.us?.high > 0 && { price: metrics.ibs.us.high, name: etTimeVal < 820 ? 'US IB High (PD)' : 'US IB High', color: '#F59E0B' },
-    metrics?.ibs?.us?.low > 0 && metrics?.ibs?.us?.low < 999999 && { price: metrics.ibs.us.low, name: etTimeVal < 820 ? 'US IB Low (PD)' : 'US IB Low', color: '#F59E0B' },
-    metrics?.ibs?.us?.mid > 0 && { price: metrics.ibs.us.mid, name: etTimeVal < 820 ? 'US IB Mid (PD)' : 'US IB Mid', color: '#F59E0B' },
-    metrics?.ibs?.us?.poc > 0 && { price: metrics.ibs.us.poc, name: etTimeVal < 820 ? 'US IB POC (PD)' : 'US IB POC', color: '#FBBF24' },
-    // NY IB (09:30-10:30 ET) - (PD) if before 09:30
-    metrics?.ibs?.ny?.high > 0 && { price: metrics.ibs.ny.high, name: etTimeVal < 930 ? 'NY IB High (PD)' : 'NY IB High', color: '#10B981' },
-    metrics?.ibs?.ny?.low > 0 && metrics?.ibs?.ny?.low < 999999 && { price: metrics.ibs.ny.low, name: etTimeVal < 930 ? 'NY IB Low (PD)' : 'NY IB Low', color: '#10B981' },
-    metrics?.ibs?.ny?.mid > 0 && { price: metrics.ibs.ny.mid, name: etTimeVal < 930 ? 'NY IB Mid (PD)' : 'NY IB Mid', color: '#10B981' },
-    metrics?.ibs?.ny?.poc > 0 && { price: metrics.ibs.ny.poc, name: etTimeVal < 930 ? 'NY IB POC (PD)' : 'NY IB POC', color: '#34D399' },
+    // Japan IB (19:00-20:00 ET) - (pd) if before 19:00 in evening, or anytime after midnight until Japan IB ends
+    metrics?.ibs?.japan?.high > 0 && { price: metrics.ibs.japan.high, name: etTimeVal < 1900 && etTimeVal >= 1800 ? 'Japan IB High (pd)' : 'Japan IB High', color: '#9370DB' },
+    metrics?.ibs?.japan?.low > 0 && metrics?.ibs?.japan?.low < 999999 && { price: metrics.ibs.japan.low, name: etTimeVal < 1900 && etTimeVal >= 1800 ? 'Japan IB Low (pd)' : 'Japan IB Low', color: '#9370DB' },
+    metrics?.ibs?.japan?.poc > 0 && { price: metrics.ibs.japan.poc, name: etTimeVal < 1900 && etTimeVal >= 1800 ? 'Japan IB POC (pd)' : 'Japan IB POC', color: '#B8A3D9' },
+    // London IB (03:00-04:00 ET) - (pd) if before 03:00
+    metrics?.ibs?.london?.high > 0 && { price: metrics.ibs.london.high, name: etTimeVal < 300 || etTimeVal >= 1800 ? 'London IB High (pd)' : 'London IB High', color: '#a855f7' },
+    metrics?.ibs?.london?.low > 0 && metrics?.ibs?.london?.low < 999999 && { price: metrics.ibs.london.low, name: etTimeVal < 300 || etTimeVal >= 1800 ? 'London IB Low (pd)' : 'London IB Low', color: '#a855f7' },
+    metrics?.ibs?.london?.poc > 0 && { price: metrics.ibs.london.poc, name: etTimeVal < 300 || etTimeVal >= 1800 ? 'London IB POC (pd)' : 'London IB POC', color: '#C084FC' },
+    // US IB (08:20-09:30 ET) - (pd) if before 08:20
+    metrics?.ibs?.us?.high > 0 && { price: metrics.ibs.us.high, name: etTimeVal < 820 ? 'US IB High (pd)' : 'US IB High', color: '#F59E0B' },
+    metrics?.ibs?.us?.low > 0 && metrics?.ibs?.us?.low < 999999 && { price: metrics.ibs.us.low, name: etTimeVal < 820 ? 'US IB Low (pd)' : 'US IB Low', color: '#F59E0B' },
+    metrics?.ibs?.us?.mid > 0 && { price: metrics.ibs.us.mid, name: etTimeVal < 820 ? 'US IB Mid (pd)' : 'US IB Mid', color: '#F59E0B' },
+    metrics?.ibs?.us?.poc > 0 && { price: metrics.ibs.us.poc, name: etTimeVal < 820 ? 'US IB POC (pd)' : 'US IB POC', color: '#FBBF24' },
+    // NY IB (09:30-10:30 ET) - (pd) if before 09:30
+    metrics?.ibs?.ny?.high > 0 && { price: metrics.ibs.ny.high, name: etTimeVal < 930 ? 'NY IB High (pd)' : 'NY IB High', color: '#10B981' },
+    metrics?.ibs?.ny?.low > 0 && metrics?.ibs?.ny?.low < 999999 && { price: metrics.ibs.ny.low, name: etTimeVal < 930 ? 'NY IB Low (pd)' : 'NY IB Low', color: '#10B981' },
+    metrics?.ibs?.ny?.mid > 0 && { price: metrics.ibs.ny.mid, name: etTimeVal < 930 ? 'NY IB Mid (pd)' : 'NY IB Mid', color: '#10B981' },
+    metrics?.ibs?.ny?.poc > 0 && { price: metrics.ibs.ny.poc, name: etTimeVal < 930 ? 'NY IB POC (pd)' : 'NY IB POC', color: '#34D399' },
   ];
 
   // Session POC from TPO data
@@ -1757,7 +1757,7 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
   ] : [];
 
   const referenceLevels = [
-    gexData.pd_high > 0 && { price: gexData.pd_high, name: 'PD High', color: '#ff4466' },
+    gexData.pd_high > 0 && { price: gexData.pd_high, name: 'pd High', color: '#ff4466' },
     showGammaLevels && gexData.hvl > 0 && { price: gexData.hvl, name: 'HVL', color: '#00aaff' },
     showGammaLevels && { price: currentPrice + 50, name: 'R3', color: '#ff6b6b' },
     showGammaLevels && { price: currentPrice + 30, name: 'R2', color: '#ff8c8c' },
@@ -1767,10 +1767,10 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
     metrics.vwap > 0 && { price: metrics.vwap, name: `${currentSessionName} VWAP`, color: '#00ddff' },
     // Day VWAP (full day from 18:00 ET)
     metrics.day_vwap > 0 && { price: metrics.day_vwap, name: 'Day VWAP', color: '#E879F9' },
-    // Anchored VWAPs - show (PD) if before session starts today
+    // Anchored VWAPs - show (pd) if before session starts today
     // US IB: 08:20-09:30 ET, NY 1H: 09:30-10:30 ET
-    metrics.us_ib_vwap > 0 && { price: metrics.us_ib_vwap, name: etTimeVal < 820 ? 'US IB VWAP (PD)' : 'US IB VWAP', color: '#F59E0B' },
-    metrics.ny_1h_vwap > 0 && { price: metrics.ny_1h_vwap, name: etTimeVal < 930 ? 'NY 1H VWAP (PD)' : 'NY 1H VWAP', color: '#10B981' },
+    metrics.us_ib_vwap > 0 && { price: metrics.us_ib_vwap, name: etTimeVal < 820 ? 'US IB VWAP (pd)' : 'US IB VWAP', color: '#F59E0B' },
+    metrics.ny_1h_vwap > 0 && { price: metrics.ny_1h_vwap, name: etTimeVal < 930 ? 'NY 1H VWAP (pd)' : 'NY 1H VWAP', color: '#10B981' },
     // Current Session POC with session name
     sessionPOC,
     // Day Value Area (from TPO profile)
@@ -1780,19 +1780,19 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
     showGammaLevels && { price: currentPrice - 15, name: 'S1', color: '#88ff88' },
     showGammaLevels && { price: currentPrice - 30, name: 'S2', color: '#66dd66' },
     showGammaLevels && { price: currentPrice - 50, name: 'S3', color: '#44bb44' },
-    gexData.pdpoc > 0 && { price: gexData.pdpoc, name: 'PD POC', color: '#ffaa00' },
+    gexData.pdpoc > 0 && { price: gexData.pdpoc, name: 'pd POC', color: '#ffaa00' },
     // PD Value Area (from historical volume profile)
-    metrics.pd_vah > 0 && { price: metrics.pd_vah, name: 'PD VAH', color: '#ffaa00' },
-    metrics.pd_val > 0 && { price: metrics.pd_val, name: 'PD VAL', color: '#ffaa00' },
-    gexData.pd_low > 0 && { price: gexData.pd_low, name: 'PD Low', color: '#00ff88' },
+    metrics.pd_vah > 0 && { price: metrics.pd_vah, name: 'pd VAH', color: '#ffaa00' },
+    metrics.pd_val > 0 && { price: metrics.pd_val, name: 'pd VAL', color: '#ffaa00' },
+    gexData.pd_low > 0 && { price: gexData.pd_low, name: 'pd Low', color: '#00ff88' },
     // Previous Day US IB levels (08:20-09:30 from yesterday)
-    metrics?.pd_us_ib?.high > 0 && { price: metrics.pd_us_ib.high, name: 'PD US IB High', color: '#F59E0B' },
-    metrics?.pd_us_ib?.low > 0 && { price: metrics.pd_us_ib.low, name: 'PD US IB Low', color: '#F59E0B' },
-    metrics?.pd_us_ib?.poc > 0 && { price: metrics.pd_us_ib.poc, name: 'PD US IB POC', color: '#FBBF24' },
+    metrics?.pd_us_ib?.high > 0 && { price: metrics.pd_us_ib.high, name: 'pd US IB High', color: '#F59E0B' },
+    metrics?.pd_us_ib?.low > 0 && { price: metrics.pd_us_ib.low, name: 'pd US IB Low', color: '#F59E0B' },
+    metrics?.pd_us_ib?.poc > 0 && { price: metrics.pd_us_ib.poc, name: 'pd US IB POC', color: '#FBBF24' },
     // Previous Day NY 1H levels (09:30-10:30 from yesterday)
-    metrics?.pd_ny_1h?.high > 0 && { price: metrics.pd_ny_1h.high, name: 'PD NY 1H High', color: '#10B981' },
-    metrics?.pd_ny_1h?.low > 0 && { price: metrics.pd_ny_1h.low, name: 'PD NY 1H Low', color: '#10B981' },
-    metrics?.pd_ny_1h?.poc > 0 && { price: metrics.pd_ny_1h.poc, name: 'PD NY 1H POC', color: '#34D399' },
+    metrics?.pd_ny_1h?.high > 0 && { price: metrics.pd_ny_1h.high, name: 'pd NY 1H High', color: '#10B981' },
+    metrics?.pd_ny_1h?.low > 0 && { price: metrics.pd_ny_1h.low, name: 'pd NY 1H Low', color: '#10B981' },
+    metrics?.pd_ny_1h?.poc > 0 && { price: metrics.pd_ny_1h.poc, name: 'pd NY 1H POC', color: '#34D399' },
     // Add Fibonacci levels
     ...fibLevels,
     // Add all 4 IB levels with names (cached until 17:00 ET)
@@ -4123,7 +4123,10 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                             const y = priceToY(trade.price);
 
                             // Radius: proportional to trade size (sqrt for visual balance)
-                            const baseRadius = Math.min(22, Math.max(8, Math.sqrt(trade.size) * 2));
+                            // Scale down for longer timeframes (more trades per candle)
+                            const radiusScale = volumeTimeframe === '5m' ? 2 : volumeTimeframe === '15m' ? 1.5 : volumeTimeframe === '30m' ? 1.2 : 0.8;
+                            const maxRadius = volumeTimeframe === '1h' ? 14 : volumeTimeframe === '30m' ? 16 : 22;
+                            const baseRadius = Math.min(maxRadius, Math.max(6, Math.sqrt(trade.size) * radiusScale));
 
                             // Use trade.ts as stable identifier (won't change on re-render)
                             const tradeId = trade.ts;
@@ -4226,9 +4229,23 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                           // Find trade by timestamp (stable identifier)
                           const trade = visibleTrades.find(t => t.ts === hoveredBigTrade);
                           if (!trade) return null;
+
+                          // Find candle index for this trade to determine tooltip position
+                          const tradeTime = trade.ts;
+                          const tradeCandleIndex = allCandles.findIndex((c, idx) => {
+                            if (!c.ts) return false;
+                            const candleStart = c.ts;
+                            const isLastCandle = idx === allCandles.length - 1;
+                            const candleEnd = isLastCandle ? candleStart + candleInterval * 2 : candleStart + candleInterval;
+                            return tradeTime >= candleStart && tradeTime < candleEnd;
+                          });
+
+                          // Position tooltip on left if trade is in right 30% of chart
+                          const isRightSide = tradeCandleIndex >= allCandles.length * 0.7;
+
                           const notional = trade.size * trade.price * multiplier;
                           const vsAvg = avgTradeSize > 0 ? (trade.size / avgTradeSize).toFixed(1) : '—';
-                          const tradeTime = new Date(trade.ts * 1000).toLocaleString('en-US', {
+                          const tradeTimeStr = new Date(trade.ts * 1000).toLocaleString('en-US', {
                             timeZone: 'America/New_York',
                             hour: '2-digit',
                             minute: '2-digit',
@@ -4239,7 +4256,7 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                             <div style={{
                               position: 'absolute',
                               top: 4,
-                              right: 4,
+                              ...(isRightSide ? { left: 4 } : { right: 4 }),
                               background: 'rgba(10,10,20,0.95)',
                               border: `2px solid ${trade.side === 'BUY' ? '#00ff88' : '#ff4466'}`,
                               borderRadius: 8,
@@ -4261,7 +4278,7 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
                                 <span style={{ color: '#666' }}>vs Average:</span>
                                 <span style={{ color: parseFloat(vsAvg) > 2 ? '#00ff88' : '#fff' }}>{vsAvg}x larger</span>
                                 <span style={{ color: '#666' }}>Time:</span>
-                                <span style={{ color: '#888' }}>{tradeTime} ET</span>
+                                <span style={{ color: '#888' }}>{tradeTimeStr} ET</span>
                                 {trade.date && (
                                   <>
                                     <span style={{ color: '#666' }}>Date:</span>
@@ -10586,28 +10603,71 @@ const RedFolderDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {[
-                  { date: 'Wed, Jan 29', time: '14:30', event: 'FOMC Press Conference', speaker: 'Powell', estDuration: '~55m' },
-                  { date: 'Fri, Feb 7', time: '10:00', event: 'Fed Chair Powell Speaks', speaker: 'Powell', estDuration: '~40m' },
-                  { date: 'Wed, Feb 12', time: '15:00', event: 'U.S. President Trump Speaks', speaker: 'Trump', estDuration: '~30m' },
-                  { date: 'Wed, Mar 19', time: '14:30', event: 'FOMC Press Conference', speaker: 'Powell', estDuration: '~55m' },
-                ].map((speech, idx) => {
-                  const speakerColor = speech.speaker === 'Powell' ? '#A78BFA' : speech.speaker === 'Trump' ? '#FF6B6B' : '#00aaff';
-                  return (
-                    <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}>
-                      <td style={{ padding: '10px 8px', color: '#aaa', fontSize: 11, whiteSpace: 'nowrap' }}>{speech.date}</td>
-                      <td style={{ padding: '10px 8px', color: '#fff', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{speech.time}</td>
-                      <td style={{ padding: '10px 8px' }}>
-                        <div style={{ color: '#fff', fontWeight: 500, fontSize: 12 }}>{speech.event}</div>
-                        <div style={{ color: speakerColor, fontSize: 10, marginTop: 2 }}>{speech.speaker}</div>
-                      </td>
-                      <td style={{ padding: '10px 8px', textAlign: 'center', color: '#888', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{speech.estDuration}</td>
-                      <td style={{ padding: '10px 8px', textAlign: 'center' }}>
-                        <span style={{ padding: '3px 8px', borderRadius: 4, fontSize: 9, fontWeight: 600, background: 'rgba(139,92,246,0.2)', color: '#A78BFA' }}>SCHEDULED</span>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {(() => {
+                  const allUpcoming = [
+                    { date: 'Wed, Jan 29', dateStr: '2026-01-29', time: '14:30', durationMin: 55, event: 'FOMC Press Conference', speaker: 'Powell', estDuration: '~55m' },
+                    { date: 'Fri, Feb 7', dateStr: '2026-02-07', time: '10:00', durationMin: 40, event: 'Fed Chair Powell Speaks', speaker: 'Powell', estDuration: '~40m' },
+                    { date: 'Wed, Feb 12', dateStr: '2026-02-12', time: '15:00', durationMin: 30, event: 'U.S. President Trump Speaks', speaker: 'Trump', estDuration: '~30m' },
+                    { date: 'Wed, Mar 19', dateStr: '2026-03-19', time: '14:30', durationMin: 55, event: 'FOMC Press Conference', speaker: 'Powell', estDuration: '~55m' },
+                  ];
+
+                  // Get current ET time
+                  const now = new Date();
+                  const etNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+
+                  // Filter and determine status for each speech
+                  const upcomingSpeeches = allUpcoming.map(speech => {
+                    const [hours, minutes] = speech.time.split(':').map(Number);
+                    const eventStart = new Date(speech.dateStr + 'T' + speech.time + ':00');
+                    // Adjust for ET timezone
+                    const eventStartET = new Date(eventStart.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+                    const eventEnd = new Date(eventStartET.getTime() + speech.durationMin * 60 * 1000);
+
+                    // Determine status
+                    let status = 'SCHEDULED';
+                    let statusColor = '#A78BFA';
+                    let statusBg = 'rgba(139,92,246,0.2)';
+
+                    if (etNow >= eventStartET && etNow <= eventEnd) {
+                      status = '🔴 LIVE';
+                      statusColor = '#ff4466';
+                      statusBg = 'rgba(255,68,102,0.3)';
+                    } else if (etNow > eventEnd) {
+                      status = 'ENDED';
+                      statusColor = '#666';
+                      statusBg = 'rgba(100,100,100,0.2)';
+                    }
+
+                    return { ...speech, status, statusColor, statusBg, eventEnd };
+                  }).filter(speech => {
+                    // Only show upcoming or currently live events (filter out ended)
+                    return speech.status !== 'ENDED';
+                  });
+
+                  if (upcomingSpeeches.length === 0) {
+                    return (
+                      <tr><td colSpan="5" style={{ padding: 20, textAlign: 'center', color: '#666' }}>No upcoming speeches scheduled</td></tr>
+                    );
+                  }
+
+                  return upcomingSpeeches.map((speech, idx) => {
+                    const speakerColor = speech.speaker === 'Powell' ? '#A78BFA' : speech.speaker === 'Trump' ? '#FF6B6B' : '#00aaff';
+                    return (
+                      <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: speech.status === '🔴 LIVE' ? 'rgba(255,68,102,0.05)' : idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}>
+                        <td style={{ padding: '10px 8px', color: '#aaa', fontSize: 11, whiteSpace: 'nowrap' }}>{speech.date}</td>
+                        <td style={{ padding: '10px 8px', color: '#fff', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{speech.time}</td>
+                        <td style={{ padding: '10px 8px' }}>
+                          <div style={{ color: '#fff', fontWeight: 500, fontSize: 12 }}>{speech.event}</div>
+                          <div style={{ color: speakerColor, fontSize: 10, marginTop: 2 }}>{speech.speaker}</div>
+                        </td>
+                        <td style={{ padding: '10px 8px', textAlign: 'center', color: '#888', fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>{speech.estDuration}</td>
+                        <td style={{ padding: '10px 8px', textAlign: 'center' }}>
+                          <span style={{ padding: '3px 8px', borderRadius: 4, fontSize: 9, fontWeight: 600, background: speech.statusBg, color: speech.statusColor, animation: speech.status === '🔴 LIVE' ? 'pulse 1.5s infinite' : 'none' }}>{speech.status}</span>
+                        </td>
+                      </tr>
+                    );
+                  });
+                })()}
               </tbody>
             </table>
           </div>
@@ -13612,9 +13672,9 @@ const ZoneParticipation = () => {
               }
 
               // Factor 3: Position vs Prior Day (weight: 25%)
-              if (price > pdHigh) { weeklyScore += 25; weeklyFactors.push('Above PD High'); }
+              if (price > pdHigh) { weeklyScore += 25; weeklyFactors.push('Above pd High'); }
               else if (price > pdMid) { weeklyScore += 15; }
-              else if (price < pdLow) { weeklyScore -= 25; weeklyFactors.push('Below PD Low'); }
+              else if (price < pdLow) { weeklyScore -= 25; weeklyFactors.push('Below pd Low'); }
               else if (price < pdMid) { weeklyScore -= 15; }
 
               // Determine Weekly Bias
@@ -13632,9 +13692,9 @@ const ZoneParticipation = () => {
             } else {
               // Fallback to PD-only analysis
               if (price > pdHigh) {
-                signals.weekly = { bias: 'BULLISH', color: '#88ff88', factors: ['Above PD High'] };
+                signals.weekly = { bias: 'BULLISH', color: '#88ff88', factors: ['Above pd High'] };
               } else if (price < pdLow) {
-                signals.weekly = { bias: 'BEARISH', color: '#ff8888', factors: ['Below PD Low'] };
+                signals.weekly = { bias: 'BEARISH', color: '#ff8888', factors: ['Below pd Low'] };
               }
             }
 
@@ -20912,7 +20972,7 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: isMobile ? 8 : 16 }}>
           <div style={styles.levelCard}>
-            <div style={styles.levelLabel}>PD High</div>
+            <div style={styles.levelLabel}>pd High</div>
             <div style={{ ...styles.levelValue, ...getPriceProximityStyle(gexData.pd_high, '#ff4466') }}>
               ${(gexData.pd_high && gexData.pd_high > 0) ? gexData.pd_high.toFixed(2) : '0.00'}
             </div>
@@ -20924,7 +20984,7 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
             </div>
           </div>
           <div style={styles.levelCard}>
-            <div style={styles.levelLabel}>PD Low</div>
+            <div style={styles.levelLabel}>pd Low</div>
             <div style={{ ...styles.levelValue, ...getPriceProximityStyle(gexData.pd_low, '#00ff88') }}>
               ${(gexData.pd_low && gexData.pd_low < 999999) ? gexData.pd_low.toFixed(2) : '0.00'}
             </div>
