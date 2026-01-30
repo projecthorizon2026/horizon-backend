@@ -10490,6 +10490,114 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(funding_data).encode())
             return
 
+        # Clawd Bot Trade Analytics endpoint
+        if path == '/trade-analytics':
+            try:
+                import os
+                trades_file = os.path.expanduser('~/.clawdbot/trade_analytics/trades.json')
+                if os.path.exists(trades_file):
+                    with open(trades_file, 'r') as f:
+                        trades = json.load(f)
+                else:
+                    trades = []
+
+                # Filter evaluated trades only
+                evaluated = [t for t in trades if t.get('outcome', {}).get('primary_outcome', {}).get('result') in ['WIN', 'LOSS']]
+
+                # Compute analytics
+                wins = [t for t in evaluated if t['outcome']['primary_outcome']['result'] == 'WIN']
+                losses = [t for t in evaluated if t['outcome']['primary_outcome']['result'] == 'LOSS']
+
+                # HIGH vs MEDIUM confidence comparison
+                high_conf = [t for t in evaluated if t.get('confidence') == 'HIGH']
+                med_conf = [t for t in evaluated if t.get('confidence') == 'MEDIUM']
+
+                def calc_stats(trades_list):
+                    if not trades_list:
+                        return {'count': 0, 'wins': 0, 'losses': 0, 'win_rate': 0, 'pnl': 0, 'avg_rr': 0, 'avg_mae': 0, 'avg_mfe': 0}
+                    w = [t for t in trades_list if t['outcome']['primary_outcome']['result'] == 'WIN']
+                    l = [t for t in trades_list if t['outcome']['primary_outcome']['result'] == 'LOSS']
+                    pnl = sum(t['outcome']['primary_outcome'].get('pnl_dollars', 0) for t in trades_list)
+                    rrs = [t['outcome']['primary_outcome'].get('reward_risk', 0) for t in trades_list if t['outcome']['primary_outcome'].get('reward_risk', 0) > 0]
+                    maes = [t['outcome']['primary_outcome'].get('mae', 0) for t in trades_list]
+                    mfes = [t['outcome']['primary_outcome'].get('mfe', 0) for t in trades_list]
+                    return {
+                        'count': len(trades_list),
+                        'wins': len(w),
+                        'losses': len(l),
+                        'win_rate': round(len(w) / len(trades_list) * 100, 1) if trades_list else 0,
+                        'pnl': pnl,
+                        'avg_rr': round(sum(rrs) / len(rrs), 2) if rrs else 0,
+                        'avg_mae': round(sum(maes) / len(maes), 1) if maes else 0,
+                        'avg_mfe': round(sum(mfes) / len(mfes), 1) if mfes else 0
+                    }
+
+                # By direction
+                longs = [t for t in evaluated if t.get('outcome', {}).get('direction') == 'LONG']
+                shorts = [t for t in evaluated if t.get('outcome', {}).get('direction') == 'SHORT']
+
+                # Target hit rates
+                t1_hits = sum(1 for t in evaluated if t['outcome']['primary_outcome'].get('t1_hit'))
+                t2_hits = sum(1 for t in evaluated if t['outcome']['primary_outcome'].get('t2_hit'))
+                t3_hits = sum(1 for t in evaluated if t['outcome']['primary_outcome'].get('t3_hit'))
+
+                analytics = {
+                    'summary': {
+                        'total_signals': len(trades),
+                        'evaluated': len(evaluated),
+                        'wins': len(wins),
+                        'losses': len(losses),
+                        'win_rate': round(len(wins) / len(evaluated) * 100, 1) if evaluated else 0,
+                        'total_pnl': sum(t['outcome']['primary_outcome'].get('pnl_dollars', 0) for t in evaluated),
+                        'avg_winner': round(sum(t['outcome']['primary_outcome'].get('pnl_dollars', 0) for t in wins) / len(wins), 2) if wins else 0,
+                        'avg_loser': round(sum(t['outcome']['primary_outcome'].get('pnl_dollars', 0) for t in losses) / len(losses), 2) if losses else 0,
+                    },
+                    'by_confidence': {
+                        'HIGH': calc_stats(high_conf),
+                        'MEDIUM': calc_stats(med_conf)
+                    },
+                    'by_direction': {
+                        'LONG': calc_stats(longs),
+                        'SHORT': calc_stats(shorts)
+                    },
+                    'target_hit_rates': {
+                        't1': round(t1_hits / len(evaluated) * 100, 1) if evaluated else 0,
+                        't2': round(t2_hits / len(evaluated) * 100, 1) if evaluated else 0,
+                        't3': round(t3_hits / len(evaluated) * 100, 1) if evaluated else 0
+                    },
+                    'drawdown': {
+                        'avg_mae_pts': round(sum(t['outcome']['primary_outcome'].get('mae', 0) for t in evaluated) / len(evaluated), 1) if evaluated else 0,
+                        'avg_mae_dollars': round(sum(t['outcome']['primary_outcome'].get('mae_dollars', 0) for t in evaluated) / len(evaluated), 0) if evaluated else 0,
+                        'max_mae_dollars': max((t['outcome']['primary_outcome'].get('mae_dollars', 0) for t in evaluated), default=0),
+                        'avg_mfe_pts': round(sum(t['outcome']['primary_outcome'].get('mfe', 0) for t in evaluated) / len(evaluated), 1) if evaluated else 0,
+                    },
+                    'trades': [{
+                        'timestamp': t.get('timestamp'),
+                        'contract': t.get('contract'),
+                        'bias': t.get('bias'),
+                        'confidence': t.get('confidence'),
+                        'direction': t.get('outcome', {}).get('direction'),
+                        'entry': t.get('bullish', {}).get('entry') if t.get('outcome', {}).get('direction') == 'LONG' else t.get('bearish', {}).get('entry'),
+                        'stop': t.get('bullish', {}).get('stop') if t.get('outcome', {}).get('direction') == 'LONG' else t.get('bearish', {}).get('stop'),
+                        'targets': t.get('bullish', {}).get('targets') if t.get('outcome', {}).get('direction') == 'LONG' else t.get('bearish', {}).get('targets'),
+                        'result': t.get('outcome', {}).get('primary_outcome', {}).get('result'),
+                        'pnl_pts': t.get('outcome', {}).get('primary_outcome', {}).get('pnl_points', 0),
+                        'pnl_dollars': t.get('outcome', {}).get('primary_outcome', {}).get('pnl_dollars', 0),
+                        'mae': t.get('outcome', {}).get('primary_outcome', {}).get('mae', 0),
+                        'mfe': t.get('outcome', {}).get('primary_outcome', {}).get('mfe', 0),
+                        'rr': t.get('outcome', {}).get('primary_outcome', {}).get('reward_risk', 0),
+                        't1_hit': t.get('outcome', {}).get('primary_outcome', {}).get('t1_hit', False),
+                        't2_hit': t.get('outcome', {}).get('primary_outcome', {}).get('t2_hit', False),
+                        't3_hit': t.get('outcome', {}).get('primary_outcome', {}).get('t3_hit', False),
+                        'signal_time': t.get('signal_time', ''),
+                    } for t in evaluated]
+                }
+
+                self.wfile.write(json.dumps(analytics).encode())
+            except Exception as e:
+                self.wfile.write(json.dumps({'error': str(e), 'trades': []}).encode())
+            return
+
         # Default endpoint - live data
         # During startup, return minimal response to prevent lock contention
         if not startup_complete:

@@ -9434,6 +9434,7 @@ const Navigation = ({ activeTab, setActiveTab, onLogout }) => {
     { id: 'live', icon: '●', label: 'Live', fullLabel: 'Live Metrics', iconColor: '#ef4444' },
     { id: 'tpo', icon: '▦', label: 'TPO', fullLabel: 'Market Profile', iconColor: '#ffaa00' },
     { id: 'zones', icon: '🎯', label: 'Zones', fullLabel: 'Zone Participation', iconColor: '#00ff88' },
+    { id: 'clawd', icon: '🤖', label: 'Clawd', fullLabel: 'Clawd Bot Analytics', iconColor: '#00aaff' },
     { id: 'treemap', icon: '📊', label: 'Matrix', fullLabel: 'Correlation Matrix' },
     { id: 'vsi', icon: '📈', label: 'Sessions', fullLabel: 'Session Analysis' },
     { id: 'trades', icon: '📋', label: 'Trades', fullLabel: 'Trade Log' },
@@ -23773,6 +23774,481 @@ const FloatingFooter = ({ globalData, selectedContract, onContractChange, contra
   );
 };
 
+// ============================================
+// CLAWD BOT TRADE ANALYTICS
+// Deep performance analysis of Clawd bot signals
+// ============================================
+const ClawdAnalytics = () => {
+  const [analytics, setAnalytics] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [selectedFilter, setSelectedFilter] = useState('all'); // all, high, medium
+  const { isMobile } = useResponsive();
+
+  useEffect(() => {
+    const fetchAnalytics = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/trade-analytics?_t=${Date.now()}`);
+        if (res.ok) {
+          const data = await res.json();
+          setAnalytics(data);
+          setError(null);
+        } else {
+          setError('Failed to fetch analytics');
+        }
+      } catch (e) {
+        setError('Connection error: ' + e.message);
+      }
+      setLoading(false);
+    };
+
+    fetchAnalytics();
+    const interval = setInterval(fetchAnalytics, 30000); // Refresh every 30s
+    return () => clearInterval(interval);
+  }, []);
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 400, color: '#888' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 40, marginBottom: 16 }}>🤖</div>
+          <div>Loading Clawd Analytics...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ padding: 24, background: 'rgba(255,68,102,0.1)', border: '1px solid rgba(255,68,102,0.3)', borderRadius: 12, color: '#ff6b6b' }}>
+        ⚠️ {error}
+      </div>
+    );
+  }
+
+  if (!analytics) return null;
+
+  const { summary, by_confidence, by_direction, target_hit_rates, drawdown, trades } = analytics;
+
+  // Filter trades based on selection
+  const filteredTrades = selectedFilter === 'all' ? trades :
+    trades.filter(t => t.confidence === selectedFilter.toUpperCase());
+
+  // Calculate filtered stats
+  const filteredStats = selectedFilter === 'all' ? summary : by_confidence[selectedFilter.toUpperCase()];
+
+  return (
+    <div style={{ maxWidth: 1400, margin: '0 auto', padding: isMobile ? 16 : 24 }}>
+      {/* Header */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+          <span style={{ fontSize: 28 }}>🤖</span>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#fff', margin: 0 }}>Clawd Bot Analytics</h1>
+        </div>
+        <p style={{ color: '#888', fontSize: 14 }}>Deep performance analysis of AI-generated trade signals</p>
+      </div>
+
+      {/* Filter Tabs */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+        {[
+          { id: 'all', label: 'All Signals', count: summary.evaluated },
+          { id: 'high', label: 'HIGH Confidence', count: by_confidence.HIGH?.count || 0, color: '#00ff88' },
+          { id: 'medium', label: 'MEDIUM Confidence', count: by_confidence.MEDIUM?.count || 0, color: '#ffaa00' },
+        ].map(filter => (
+          <button
+            key={filter.id}
+            onClick={() => setSelectedFilter(filter.id)}
+            style={{
+              padding: '10px 16px',
+              borderRadius: 8,
+              border: selectedFilter === filter.id ? `2px solid ${filter.color || '#00ff88'}` : '1px solid rgba(255,255,255,0.1)',
+              background: selectedFilter === filter.id ? `${filter.color || '#00ff88'}15` : 'transparent',
+              color: selectedFilter === filter.id ? (filter.color || '#00ff88') : '#888',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            {filter.label}
+            <span style={{
+              background: 'rgba(255,255,255,0.1)',
+              padding: '2px 8px',
+              borderRadius: 4,
+              fontSize: 11,
+            }}>{filter.count}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Summary Stats Grid */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)',
+        gap: 16,
+        marginBottom: 24
+      }}>
+        {/* Win Rate */}
+        <div style={{
+          padding: 20,
+          background: 'linear-gradient(135deg, rgba(0,255,136,0.1) 0%, rgba(0,200,100,0.05) 100%)',
+          border: '1px solid rgba(0,255,136,0.3)',
+          borderRadius: 12,
+        }}>
+          <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Win Rate</div>
+          <div style={{ fontSize: 32, fontWeight: 700, color: '#00ff88' }}>{filteredStats?.win_rate || summary.win_rate}%</div>
+          <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+            {filteredStats?.wins || summary.wins}W - {filteredStats?.losses || summary.losses}L
+          </div>
+        </div>
+
+        {/* Total P&L */}
+        <div style={{
+          padding: 20,
+          background: summary.total_pnl >= 0 ? 'rgba(0,255,136,0.05)' : 'rgba(255,68,102,0.05)',
+          border: `1px solid ${summary.total_pnl >= 0 ? 'rgba(0,255,136,0.2)' : 'rgba(255,68,102,0.2)'}`,
+          borderRadius: 12,
+        }}>
+          <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Total P&L</div>
+          <div style={{ fontSize: 28, fontWeight: 700, color: summary.total_pnl >= 0 ? '#00ff88' : '#ff4466' }}>
+            ${(filteredStats?.pnl || summary.total_pnl).toLocaleString()}
+          </div>
+          <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+            {((filteredStats?.pnl || summary.total_pnl) / 10).toFixed(0)} pts
+          </div>
+        </div>
+
+        {/* Avg R:R */}
+        <div style={{
+          padding: 20,
+          background: 'rgba(0,170,255,0.05)',
+          border: '1px solid rgba(0,170,255,0.2)',
+          borderRadius: 12,
+        }}>
+          <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Avg R:R</div>
+          <div style={{ fontSize: 28, fontWeight: 700, color: '#00aaff' }}>
+            {filteredStats?.avg_rr || 0}:1
+          </div>
+          <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>Risk/Reward</div>
+        </div>
+
+        {/* Avg MAE */}
+        <div style={{
+          padding: 20,
+          background: 'rgba(255,170,0,0.05)',
+          border: '1px solid rgba(255,170,0,0.2)',
+          borderRadius: 12,
+        }}>
+          <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Avg Drawdown</div>
+          <div style={{ fontSize: 28, fontWeight: 700, color: '#ffaa00' }}>
+            ${drawdown.avg_mae_dollars?.toLocaleString()}
+          </div>
+          <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+            {drawdown.avg_mae_pts} pts MAE
+          </div>
+        </div>
+
+        {/* Max Drawdown */}
+        <div style={{
+          padding: 20,
+          background: 'rgba(255,68,102,0.05)',
+          border: '1px solid rgba(255,68,102,0.2)',
+          borderRadius: 12,
+        }}>
+          <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Max Drawdown</div>
+          <div style={{ fontSize: 28, fontWeight: 700, color: '#ff4466' }}>
+            ${drawdown.max_mae_dollars?.toLocaleString()}
+          </div>
+          <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>Worst MAE</div>
+        </div>
+      </div>
+
+      {/* Comparison: HIGH vs MEDIUM Confidence */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+        gap: 24,
+        marginBottom: 24
+      }}>
+        {/* HIGH Confidence Box */}
+        <div style={{
+          padding: 24,
+          background: 'linear-gradient(135deg, rgba(0,255,136,0.08) 0%, rgba(0,200,100,0.02) 100%)',
+          border: '2px solid rgba(0,255,136,0.3)',
+          borderRadius: 16,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+            <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#00ff88' }} />
+            <span style={{ fontSize: 16, fontWeight: 700, color: '#00ff88' }}>HIGH Confidence Trades</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+            <div>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Count</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: '#fff' }}>{by_confidence.HIGH?.count || 0}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Win Rate</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: '#00ff88' }}>{by_confidence.HIGH?.win_rate || 0}%</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>P&L</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: '#00ff88' }}>${(by_confidence.HIGH?.pnl || 0).toLocaleString()}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Avg R:R</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: '#00aaff' }}>{by_confidence.HIGH?.avg_rr || 0}:1</div>
+            </div>
+          </div>
+        </div>
+
+        {/* MEDIUM Confidence Box */}
+        <div style={{
+          padding: 24,
+          background: 'linear-gradient(135deg, rgba(255,170,0,0.08) 0%, rgba(200,130,0,0.02) 100%)',
+          border: '2px solid rgba(255,170,0,0.3)',
+          borderRadius: 16,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+            <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#ffaa00' }} />
+            <span style={{ fontSize: 16, fontWeight: 700, color: '#ffaa00' }}>MEDIUM Confidence Trades</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+            <div>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Count</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: '#fff' }}>{by_confidence.MEDIUM?.count || 0}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Win Rate</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: '#ffaa00' }}>{by_confidence.MEDIUM?.win_rate || 0}%</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>P&L</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: '#ffaa00' }}>${(by_confidence.MEDIUM?.pnl || 0).toLocaleString()}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Avg R:R</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: '#00aaff' }}>{by_confidence.MEDIUM?.avg_rr || 0}:1</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Direction Analysis + Target Hit Rates */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+        gap: 16,
+        marginBottom: 24
+      }}>
+        {/* LONG Performance */}
+        <div style={{
+          padding: 20,
+          background: 'rgba(0,200,100,0.05)',
+          border: '1px solid rgba(0,200,100,0.2)',
+          borderRadius: 12,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <span style={{ fontSize: 20 }}>📈</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#00cc66' }}>LONG Trades</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 10, color: '#666' }}>Wins</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: '#00ff88' }}>{by_direction.LONG?.wins || 0}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: '#666' }}>P&L</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: '#00ff88' }}>${(by_direction.LONG?.pnl || 0).toLocaleString()}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* SHORT Performance */}
+        <div style={{
+          padding: 20,
+          background: 'rgba(255,100,100,0.05)',
+          border: '1px solid rgba(255,100,100,0.2)',
+          borderRadius: 12,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <span style={{ fontSize: 20 }}>📉</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#ff6666' }}>SHORT Trades</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 10, color: '#666' }}>Wins</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: '#00ff88' }}>{by_direction.SHORT?.wins || 0}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, color: '#666' }}>P&L</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: '#00ff88' }}>${(by_direction.SHORT?.pnl || 0).toLocaleString()}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Target Hit Rates */}
+        <div style={{
+          padding: 20,
+          background: 'rgba(0,170,255,0.05)',
+          border: '1px solid rgba(0,170,255,0.2)',
+          borderRadius: 12,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <span style={{ fontSize: 20 }}>🎯</span>
+            <span style={{ fontSize: 14, fontWeight: 600, color: '#00aaff' }}>Target Hit Rates</span>
+          </div>
+          <div style={{ display: 'flex', gap: 16, justifyContent: 'space-between' }}>
+            {[
+              { label: 'T1', rate: target_hit_rates.t1, color: '#00ff88' },
+              { label: 'T2', rate: target_hit_rates.t2, color: '#00aaff' },
+              { label: 'T3', rate: target_hit_rates.t3, color: '#ffaa00' },
+            ].map(t => (
+              <div key={t.label} style={{ textAlign: 'center', flex: 1 }}>
+                <div style={{ fontSize: 10, color: '#666', marginBottom: 4 }}>{t.label}</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: t.color }}>{t.rate}%</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Trade Log Table */}
+      <div style={{
+        background: 'rgba(255,255,255,0.02)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        borderRadius: 16,
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          padding: '16px 20px',
+          borderBottom: '1px solid rgba(255,255,255,0.08)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#fff' }}>Trade Log</h3>
+          <span style={{ fontSize: 12, color: '#888' }}>{filteredTrades.length} trades</span>
+        </div>
+
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+            <thead>
+              <tr style={{ background: 'rgba(0,0,0,0.3)' }}>
+                {['Time', 'Contract', 'Dir', 'Conf', 'Entry', 'Result', 'P&L', 'MAE', 'MFE', 'R:R', 'T1', 'T2', 'T3'].map(h => (
+                  <th key={h} style={{
+                    padding: '12px 16px',
+                    textAlign: 'left',
+                    fontSize: 10,
+                    color: '#666',
+                    textTransform: 'uppercase',
+                    letterSpacing: 1,
+                    fontWeight: 600,
+                    borderBottom: '1px solid rgba(255,255,255,0.05)',
+                  }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTrades.map((trade, idx) => (
+                <tr key={idx} style={{
+                  background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)',
+                  transition: 'background 0.2s',
+                }}>
+                  <td style={{ padding: '12px 16px', fontSize: 12, color: '#888' }}>
+                    {trade.signal_time || new Date(trade.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                  </td>
+                  <td style={{ padding: '12px 16px', fontSize: 12, color: '#fff', fontWeight: 500 }}>{trade.contract}</td>
+                  <td style={{ padding: '12px 16px' }}>
+                    <span style={{
+                      padding: '3px 8px',
+                      borderRadius: 4,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      background: trade.direction === 'LONG' ? 'rgba(0,200,100,0.2)' : 'rgba(255,100,100,0.2)',
+                      color: trade.direction === 'LONG' ? '#00cc66' : '#ff6666',
+                    }}>{trade.direction}</span>
+                  </td>
+                  <td style={{ padding: '12px 16px' }}>
+                    <span style={{
+                      padding: '3px 8px',
+                      borderRadius: 4,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      background: trade.confidence === 'HIGH' ? 'rgba(0,255,136,0.2)' : 'rgba(255,170,0,0.2)',
+                      color: trade.confidence === 'HIGH' ? '#00ff88' : '#ffaa00',
+                    }}>{trade.confidence}</span>
+                  </td>
+                  <td style={{ padding: '12px 16px', fontSize: 13, color: '#fff', fontFamily: 'monospace' }}>
+                    ${trade.entry?.toFixed(1)}
+                  </td>
+                  <td style={{ padding: '12px 16px' }}>
+                    <span style={{
+                      padding: '4px 10px',
+                      borderRadius: 4,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      background: trade.result === 'WIN' ? 'rgba(0,255,136,0.2)' : 'rgba(255,68,102,0.2)',
+                      color: trade.result === 'WIN' ? '#00ff88' : '#ff4466',
+                    }}>{trade.result}</span>
+                  </td>
+                  <td style={{
+                    padding: '12px 16px',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: trade.pnl_dollars >= 0 ? '#00ff88' : '#ff4466',
+                    fontFamily: 'monospace',
+                  }}>
+                    {trade.pnl_dollars >= 0 ? '+' : ''}${trade.pnl_dollars?.toLocaleString()}
+                  </td>
+                  <td style={{ padding: '12px 16px', fontSize: 12, color: '#ff8866', fontFamily: 'monospace' }}>
+                    {trade.mae?.toFixed(0)} pts
+                  </td>
+                  <td style={{ padding: '12px 16px', fontSize: 12, color: '#66ff88', fontFamily: 'monospace' }}>
+                    {trade.mfe?.toFixed(0)} pts
+                  </td>
+                  <td style={{ padding: '12px 16px', fontSize: 12, color: '#00aaff', fontFamily: 'monospace' }}>
+                    {trade.rr > 0 ? trade.rr.toFixed(1) : '-'}
+                  </td>
+                  <td style={{ padding: '12px 16px' }}>
+                    {trade.t1_hit ? <span style={{ color: '#00ff88' }}>✓</span> : <span style={{ color: '#444' }}>-</span>}
+                  </td>
+                  <td style={{ padding: '12px 16px' }}>
+                    {trade.t2_hit ? <span style={{ color: '#00ff88' }}>✓</span> : <span style={{ color: '#444' }}>-</span>}
+                  </td>
+                  <td style={{ padding: '12px 16px' }}>
+                    {trade.t3_hit ? <span style={{ color: '#00ff88' }}>✓</span> : <span style={{ color: '#444' }}>-</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Key Insights */}
+      <div style={{
+        marginTop: 24,
+        padding: 20,
+        background: 'linear-gradient(135deg, rgba(0,170,255,0.08) 0%, rgba(0,100,200,0.02) 100%)',
+        border: '1px solid rgba(0,170,255,0.2)',
+        borderRadius: 12,
+      }}>
+        <h3 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 600, color: '#00aaff' }}>📊 Key Insights</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: 16, fontSize: 13, color: '#ccc' }}>
+          <div>• <strong style={{ color: '#00ff88' }}>HIGH confidence</strong> trades: {by_confidence.HIGH?.count || 0} signals, ${(by_confidence.HIGH?.pnl || 0).toLocaleString()} profit</div>
+          <div>• <strong style={{ color: '#ffaa00' }}>MEDIUM confidence</strong> trades: {by_confidence.MEDIUM?.count || 0} signals, ${(by_confidence.MEDIUM?.pnl || 0).toLocaleString()} profit</div>
+          <div>• Target 1 hit rate: <strong style={{ color: '#00ff88' }}>{target_hit_rates.t1}%</strong> - highly reliable first targets</div>
+          <div>• Avg MFE: <strong style={{ color: '#66ff88' }}>{drawdown.avg_mfe_pts} pts</strong> - maximum favorable excursion</div>
+          <div>• Avg MAE: <strong style={{ color: '#ff8866' }}>{drawdown.avg_mae_pts} pts</strong> - expect temporary drawdowns</div>
+          <div>• Max drawdown: <strong style={{ color: '#ff4466' }}>${drawdown.max_mae_dollars?.toLocaleString()}</strong> - worst case scenario</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Main App Component
 const App = () => {
   const { isMobile, isTablet } = useResponsive();
@@ -24322,6 +24798,7 @@ const App = () => {
             {activeTab === 'live' && <LiveDashboard settings={settings} onSettingsChange={setSettings} />}
             {activeTab === 'tpo' && <MarketProfile selectedContract={selectedContract} />}
             {activeTab === 'zones' && <ZoneParticipation />}
+            {activeTab === 'clawd' && <ClawdAnalytics />}
             {activeTab === 'treemap' && <CorrelationMatrix />}
             {activeTab === 'vsi' && <VSIAnalysis selectedContract={selectedContract} />}
             {activeTab === 'trades' && <TradeLog trades={allTrades} dateRange={dateRange} />}
