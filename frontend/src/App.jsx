@@ -1815,7 +1815,7 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
   // Swing Fib follows TradingView convention:
   // UP swing (low→high): 100% at High, 0% at Low, extensions -27%/-62% ABOVE high
   // DOWN swing (high→low): 100% at High, 0% at Low, extensions -27%/-62% BELOW low
-  const swingFibLevels = swingRange > 50 ? (swingDir === 'up' ? [
+  const swingFibLevels = swingRange > 30 ? (swingDir === 'up' ? [
     // UP swing: Price moved from low to high (bullish)
     // 0% at swing high, retracement down toward 100% (swing low)
     // Extensions ABOVE swing high: -27%, -62%
@@ -21327,7 +21327,7 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
               </div>
 
               {/* Swing Fibonacci Retracement */}
-              {swingRange > 50 && (
+              {swingRange > 30 && (
                 <div style={{ flex: '0 0 auto', borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: 16 }}>
                   <div style={{ fontSize: 10, color: '#A78BFA', marginBottom: 8 }}>Swing Fib {swingDir === 'up' ? '↑' : swingDir === 'down' ? '↓' : '—'}</div>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>

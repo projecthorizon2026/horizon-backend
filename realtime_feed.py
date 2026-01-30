@@ -10604,7 +10604,7 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             'volume_1h': s['volume_1h'],
 
             # Swing Detection (for Fibonacci retracement)
-            'swing': detect_swing_points(s['volume_5m'].get('history', []), lookback=50, swing_strength=1, min_range=50),
+            'swing': detect_swing_points(s['volume_5m'].get('history', []), lookback=50, swing_strength=1, min_range=30),
 
             # Big Trades (Order Flow)
             'big_trades': s.get('big_trades', []),

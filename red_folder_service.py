@@ -136,8 +136,8 @@ HIGH_IMPACT_EVENTS = [
 
     # ============= 2026 EVENTS =============
     # FOMC Rate Decisions at 14:00 ET, Press Conferences at 14:30 ET
-    (2026, 1, 29, 14, 0, "FOMC Rate Decision", "CRITICAL"),  # Wed Jan 29 - Rate Decision
-    (2026, 1, 29, 14, 30, "FOMC Press Conference", "CRITICAL"),  # Wed Jan 29 - Powell speaks
+    (2026, 1, 28, 14, 0, "FOMC Rate Decision", "CRITICAL"),  # Tue Jan 28 - Rate Decision
+    (2026, 1, 28, 14, 30, "FOMC Press Conference", "CRITICAL"),  # Tue Jan 28 - Powell speaks
     (2026, 2, 7, 10, 0, "Fed Chair Powell Speaks", "CRITICAL"),  # Feb 7 - Powell speaks
     (2026, 2, 12, 15, 0, "U.S. President Trump Speaks", "HIGH"),  # Feb 12 - Trump speaks
     (2026, 3, 19, 14, 30, "FOMC Press Conference", "CRITICAL"),  # Wed Mar 19
