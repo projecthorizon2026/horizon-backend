@@ -10604,7 +10604,15 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             'volume_1h': s['volume_1h'],
 
             # Swing Detection (for Fibonacci retracement)
-            'swing': detect_swing_points(s['volume_5m'].get('history', []), lookback=50, swing_strength=1, min_range=30),
+            # Falls back to day high/low if 5m history insufficient
+            'swing': (lambda swing_result: swing_result if swing_result.get('swing_high', 0) > 0 and swing_result.get('swing_low', 0) > 0 else {
+                'swing_high': s.get('day_high', 0) if s.get('day_high', 0) > 0 else (s.get('session_high', 0) if s.get('session_high', 0) > 0 else 0),
+                'swing_low': s.get('day_low', 0) if 0 < s.get('day_low', 999999) < 999999 else (s.get('session_low', 0) if 0 < s.get('session_low', 999999) < 999999 else 0),
+                'swing_direction': 'up' if s.get('current_price', 0) > ((s.get('day_high', 0) + s.get('day_low', 0)) / 2) else 'down',
+                'swing_high_idx': -1, 'swing_low_idx': -1,
+                'swing_type': 'day_fallback',
+                'extensions_direction': 'up' if s.get('current_price', 0) > ((s.get('day_high', 0) + s.get('day_low', 0)) / 2) else 'down'
+            })(detect_swing_points(s['volume_5m'].get('history', []), lookback=50, swing_strength=1, min_range=30)),
 
             # Big Trades (Order Flow)
             'big_trades': s.get('big_trades', []),
