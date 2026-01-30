@@ -10486,7 +10486,8 @@ class LiveDataHandler(BaseHTTPRequestHandler):
         ib_mid = (ib_high + ib_low) / 2 if ib_high > 0 and ib_low > 0 else 0
 
         response = {
-            'version': '15.9.14',  # v15.9.14: Add PD VAH/VAL, Day VAH/VAL to API + historical big trades fetch
+            'version': '15.9.15',  # v15.9.15: Add data_source field for frontend connection status
+            'data_source': 'LIVE' if s['current_price'] > 0 else 'DISCONNECTED',
             'ticker': s['ticker'],
             'contract': s['contract'],
             'contract_name': s['contract_name'],
