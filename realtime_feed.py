@@ -10620,7 +10620,7 @@ class LiveDataHandler(BaseHTTPRequestHandler):
                             'swing_type': 'impulse_based',
                             # DOWN: extensions below low, UP: extensions above high
                             'extensions_direction': 'down' if is_down else 'up'
-                        })(high_ts > low_ts)  # high_ts > low_ts means high is MORE RECENT (came after low) = UP swing
+                        })(high_ts < low_ts)  # high_ts < low_ts means high came BEFORE low = DOWN swing
                     )(
                         high_candle.get('price_high', 0) if high_candle else s.get('session_high', 0),
                         low_candle.get('price_low', 0) if low_candle else s.get('day_low', 0),
