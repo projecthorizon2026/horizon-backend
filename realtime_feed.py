@@ -10627,7 +10627,7 @@ class LiveDataHandler(BaseHTTPRequestHandler):
 
             # Big Trades (Order Flow)
             'big_trades': s.get('big_trades', []),
-            'big_trades_historical': get_historical_big_trades_cached(),  # Last 7 days of big trades
+            'big_trades_historical': get_historical_big_trades_cached()[:100],  # Limit to 100 most recent
             'big_trades_buy': s.get('big_trades_buy') or 0,
             'big_trades_sell': s.get('big_trades_sell') or 0,
             'big_trades_delta': s.get('big_trades_delta') or 0,
