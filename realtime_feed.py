@@ -78,6 +78,15 @@ except ImportError:
 API_KEY = os.environ.get('DATABENTO_API_KEY', '')
 PORT = int(os.environ.get('PORT', 8080))
 
+# Trade metrics helpers for Clawdbot
+try:
+    from trade_metrics_helpers import process_bars_for_trade_metrics, fetch_historical_bars_for_trade
+    HAS_TRADE_METRICS = True
+    print("✅ Trade metrics helpers loaded")
+except ImportError:
+    HAS_TRADE_METRICS = False
+    print("⚠️  trade_metrics_helpers not found")
+
 # Discord webhook for alerts
 DISCORD_WEBHOOK_URL = os.environ.get('DISCORD_WEBHOOK_URL', 'https://discord.com/api/webhooks/839103546740703323/OmhtJBeEAvzFvJ2BtzIC7XhydCvEe0XigPaHC2HhKziNzCVZNlup6UrGrgkzM-Fcw8yq')
 
@@ -10444,6 +10453,34 @@ class LiveDataHandler(BaseHTTPRequestHandler):
         # Deribit options data for BTC gamma/GEX levels
         if path == '/deribit-options':
             options_data = fetch_deribit_options()
+
+        # Trade metrics endpoint for Clawdbot analytics
+        if path == '/trade-metrics':
+            try:
+                entry_price = float(query_params.get('entry_price', [0])[0])
+                entry_time = query_params.get('entry_time', [''])[0]
+                entry_date = query_params.get('entry_date', [''])[0]
+                direction = query_params.get('direction', ['long'])[0].lower()
+                stop_price = float(query_params.get('stop_price', [0])[0])
+                t1 = float(query_params.get('t1', [0])[0]) if query_params.get('t1') else None
+                t2 = float(query_params.get('t2', [0])[0]) if query_params.get('t2') else None
+                t3 = float(query_params.get('t3', [0])[0]) if query_params.get('t3') else None
+                contract = query_params.get('contract', ['GCG26'])[0]
+                targets = [t for t in [t1, t2, t3] if t]
+                if not entry_price or not entry_time or not entry_date:
+                    self.wfile.write(json.dumps({'error': 'Missing required params'}).encode())
+                    return
+                bars = fetch_historical_bars_for_trade(contract, entry_date, entry_time)
+                if not bars:
+                    self.wfile.write(json.dumps({'error': 'No bar data', 'entry_date': entry_date}).encode())
+                    return
+                metrics = process_bars_for_trade_metrics(bars, entry_price, direction, stop_price, targets)
+                self.wfile.write(json.dumps(metrics).encode())
+                return
+            except Exception as e:
+                self.wfile.write(json.dumps({'error': str(e)}).encode())
+                return
+
             self.wfile.write(json.dumps(options_data).encode())
             return
 
