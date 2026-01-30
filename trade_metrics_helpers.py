@@ -3,6 +3,7 @@ Trade Metrics Helper Functions for Project Horizon
 """
 from datetime import datetime, timedelta
 import pytz
+import os
 
 def process_bars_for_trade_metrics(bars, entry_price, direction, stop_price, targets):
     """Process bar data to calculate trade metrics."""
@@ -30,7 +31,10 @@ def process_bars_for_trade_metrics(bars, entry_price, direction, stop_price, tar
     for bar in bars:
         bar_time = bar.get('timestamp')
         if isinstance(bar_time, str):
-            bar_time = datetime.fromisoformat(bar_time.replace('Z', '+00:00'))
+            try:
+                bar_time = datetime.fromisoformat(bar_time.replace('Z', '+00:00'))
+            except:
+                pass
         bar_high = bar['high']
         bar_low = bar['low']
         bar_close = bar['close']
@@ -121,9 +125,15 @@ def process_bars_for_trade_metrics(bars, entry_price, direction, stop_price, tar
     def time_diff_secs(t1, t2):
         if t1 and t2:
             if isinstance(t1, str):
-                t1 = datetime.fromisoformat(t1.replace('Z', '+00:00'))
+                try:
+                    t1 = datetime.fromisoformat(t1.replace('Z', '+00:00'))
+                except:
+                    return None
             if isinstance(t2, str):
-                t2 = datetime.fromisoformat(t2.replace('Z', '+00:00'))
+                try:
+                    t2 = datetime.fromisoformat(t2.replace('Z', '+00:00'))
+                except:
+                    return None
             return int((t2 - t1).total_seconds())
         return None
     
@@ -157,11 +167,12 @@ def fetch_historical_bars_for_trade(contract, entry_date, entry_time, api_key=No
     try:
         import databento as db
     except ImportError:
+        print("Databento not installed")
         return None
     
-    import os
     api_key = api_key or os.environ.get('DATABENTO_API_KEY', '')
     if not api_key:
+        print("No DATABENTO_API_KEY found")
         return None
     
     try:
@@ -171,42 +182,63 @@ def fetch_historical_bars_for_trade(contract, entry_date, entry_time, api_key=No
         hour, minute = map(int, entry_time.split(':')[:2])
         entry_dt = ET.localize(datetime.strptime(entry_date, '%Y-%m-%d').replace(hour=hour, minute=minute))
         
-        # End of session (5:00 PM ET or next day if after hours)
+        # End of session (5:00 PM ET or extend if after hours)
         end_dt = entry_dt.replace(hour=17, minute=0)
         if entry_dt.hour >= 17:
             end_dt += timedelta(days=1)
         
-        # Map contract to Databento symbol
-        symbol_map = {
-            'GCG26': 'GC.c.0',  # Front month gold
-            'GCJ26': 'GC.c.0',
-            'GCH26': 'GC.c.0',
-        }
-        db_symbol = symbol_map.get(contract, 'GC.c.0')
+        # Convert to UTC for Databento
+        start_ts = entry_dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+        end_ts = end_dt.strftime('%Y-%m-%dT%H:%M:%SZ')
         
-        # Fetch from Databento
+        print(f"Fetching OHLCV bars from {start_ts} to {end_ts}")
+        
+        # Use parent symbol for continuous contract
         client = db.Historical(key=api_key)
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
-            symbols=[db_symbol],
+            symbols=['GC.FUT'],
+            stype_in='parent',
             schema='ohlcv-1m',
-            start=entry_dt.isoformat(),
-            end=end_dt.isoformat(),
+            start=start_ts,
+            end=end_ts,
         )
         
-        bars = []
-        for record in data:
-            bars.append({
-                'timestamp': record.ts_event.isoformat() if hasattr(record.ts_event, 'isoformat') else str(record.ts_event),
-                'open': record.open / 1e9,  # Databento uses fixed-point
-                'high': record.high / 1e9,
-                'low': record.low / 1e9,
-                'close': record.close / 1e9,
-                'volume': record.volume
-            })
+        records = list(data)
+        print(f"Got {len(records)} bar records")
         
-        return bars
+        if not records:
+            return None
+        
+        bars = []
+        for record in records:
+            # Databento uses nanoseconds for prices in fixed-point
+            try:
+                ts = record.ts_event
+                if hasattr(ts, 'isoformat'):
+                    ts_str = ts.isoformat()
+                else:
+                    # ts_event is in nanoseconds since epoch
+                    ts_dt = datetime.utcfromtimestamp(ts / 1e9)
+                    ts_str = ts_dt.isoformat()
+                
+                bars.append({
+                    'timestamp': ts_str,
+                    'open': record.open / 1e9,
+                    'high': record.high / 1e9,
+                    'low': record.low / 1e9,
+                    'close': record.close / 1e9,
+                    'volume': record.volume
+                })
+            except Exception as e:
+                print(f"Error parsing record: {e}")
+                continue
+        
+        print(f"Parsed {len(bars)} bars")
+        return bars if bars else None
         
     except Exception as e:
         print(f"Error fetching historical bars: {e}")
+        import traceback
+        traceback.print_exc()
         return None
