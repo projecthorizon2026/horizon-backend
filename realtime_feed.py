@@ -10606,32 +10606,23 @@ class LiveDataHandler(BaseHTTPRequestHandler):
 
             # Swing Detection (for Fibonacci retracement)
             # Finds impulse move direction by checking which extreme (high/low) came first
-            'swing': (lambda history_5m: (lambda candles:
-                (lambda high_candle, low_candle:
-                    (lambda swing_sh, swing_sl, high_ts, low_ts:
-                        # DOWN swing if high came BEFORE low (price dropped from high to low)
-                        # UP swing if low came BEFORE high (price rallied from low to high)
-                        (lambda is_down: {
-                            'swing_high': round(swing_sh, 1),
-                            'swing_low': round(swing_sl, 1),
-                            'swing_direction': 'down' if is_down else 'up',
-                            'swing_high_idx': -1,
-                            'swing_low_idx': -1,
-                            'swing_type': 'impulse_based',
-                            # DOWN: extensions below low, UP: extensions above high
-                            'extensions_direction': 'down' if is_down else 'up'
-                        })(high_ts < low_ts)  # high_ts < low_ts means high came BEFORE low = DOWN swing
-                    )(
-                        high_candle.get('price_high', 0) if high_candle else s.get('session_high', 0),
-                        low_candle.get('price_low', 0) if low_candle else s.get('day_low', 0),
-                        high_candle.get('ts', 0) if high_candle else 0,
-                        low_candle.get('ts', 0) if low_candle else 0
-                    )
-                )(
-                    max(candles, key=lambda c: c.get('price_high', 0)) if candles else None,
-                    min(candles, key=lambda c: c.get('price_low', 999999)) if candles else None
-                )
-            )(s['volume_5m'].get('history', []))),
+            'swing': (lambda candles: (
+                {
+                    'swing_high': round(max(c.get('price_high', 0) for c in candles) if candles else s.get('session_high', 0), 1),
+                    'swing_low': round(min(c.get('price_low', 999999) for c in candles) if candles else s.get('day_low', 0), 1),
+                    'swing_direction': 'down' if (
+                        (max(candles, key=lambda c: c.get('price_high', 0)).get('ts', 0) if candles else 0) <
+                        (min(candles, key=lambda c: c.get('price_low', 999999)).get('ts', 0) if candles else 0)
+                    ) else 'up',
+                    'swing_high_idx': -1,
+                    'swing_low_idx': -1,
+                    'swing_type': 'impulse_based',
+                    'extensions_direction': 'down' if (
+                        (max(candles, key=lambda c: c.get('price_high', 0)).get('ts', 0) if candles else 0) <
+                        (min(candles, key=lambda c: c.get('price_low', 999999)).get('ts', 0) if candles else 0)
+                    ) else 'up'
+                }
+            ))(s['volume_5m'].get('history', [])),
 
             # Big Trades (Order Flow)
             'big_trades': s.get('big_trades', []),
