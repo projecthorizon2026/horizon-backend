@@ -1,0 +1,1232 @@
+[
+  {
+    "timestamp": "2026-01-30T20:23:02.358808",
+    "raw_message": "*\u26a1 DAILY GC POWER - GCG26*\n_Thu Jan 29, 5:00 PM ET - RTH Close_\n*BIAS:* \ud83d\udfe1 NEUTRAL-BEARISH\n*CONFIDENCE:* MEDIUM\n*\ud83d\udcc8 BULLISH SCENARIO*\nEntry: $5365\nTargets: $5383 \u2192 $5452.8 \u2192 $5500\nStop: $5332\n*\ud83d\udcc9 BEARISH SCENARIO*\nEntry: $5500\nTargets: $5383 \u2192 $5290 \u2192 $5193.6\nStop: $5520\n",
+    "contract": "GCG26",
+    "price_at_signal": null,
+    "bias": "BEARISH",
+    "confidence": "MEDIUM",
+    "bullish": {
+      "entry": 5365.0,
+      "targets": [
+        5383.0,
+        5452.8,
+        5500.0
+      ],
+      "stop": 5332.0
+    },
+    "bearish": {
+      "entry": 5500.0,
+      "targets": [
+        5383.0,
+        5290.0,
+        5193.6
+      ],
+      "stop": 5520.0
+    },
+    "key_levels": {},
+    "outcome": {
+      "evaluated_at": "2026-01-31T00:52:32.243779",
+      "session_high": 5480.2,
+      "session_low": 4700.4,
+      "close_price": 4888.2,
+      "bullish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 87.8,
+        "pnl_dollars": 878.0,
+        "mfe": 115.2,
+        "mfe_dollars": 1152.0,
+        "mae": 664.6,
+        "mae_dollars": 6646.0,
+        "mae_pct_of_risk": 2013.9,
+        "risk": 33.0,
+        "risk_dollars": 330.0,
+        "reward_risk": 2.66,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": false,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "bearish_outcome": {
+        "entry_triggered": false,
+        "result": "NO_FILL"
+      },
+      "primary_outcome": {
+        "entry_triggered": false,
+        "result": "NO_FILL"
+      },
+      "direction": "SHORT"
+    },
+    "signal_time": "5:00 PM"
+  },
+  {
+    "timestamp": "2026-01-30T20:23:02.732993",
+    "raw_message": "*\ud83c\udde8\ud83c\uddf3 CHINA SESSION - GCG26*\n_Thu Jan 29, 9:00 PM ET_\n*BIAS:* \ud83d\udc3b BEARISH\n*CONFIDENCE:* HIGH\n*\ud83d\udcc8 BULLISH SCENARIO*\nEntry: $5320\nTargets: $5381 \u2192 $5418 \u2192 $5452\nStop: $5317\n*\ud83d\udcc9 BEARISH SCENARIO*\nEntry: $5365\nTargets: $5320 \u2192 $5290 \u2192 $5193\nStop: $5384\n",
+    "contract": "GCG26",
+    "price_at_signal": null,
+    "bias": "BEARISH",
+    "confidence": "HIGH",
+    "bullish": {
+      "entry": 5320.0,
+      "targets": [
+        5381.0,
+        5418.0,
+        5452.0
+      ],
+      "stop": 5317.0
+    },
+    "bearish": {
+      "entry": 5365.0,
+      "targets": [
+        5320.0,
+        5290.0,
+        5193.0
+      ],
+      "stop": 5384.0
+    },
+    "key_levels": {},
+    "outcome": {
+      "evaluated_at": "2026-01-31T00:52:32.244120",
+      "session_high": 5480.2,
+      "session_low": 4700.4,
+      "close_price": 4888.2,
+      "bullish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 132.0,
+        "pnl_dollars": 1320.0,
+        "mfe": 160.2,
+        "mfe_dollars": 1602.0,
+        "mae": 619.6,
+        "mae_dollars": 6196.0,
+        "mae_pct_of_risk": 20653.3,
+        "risk": 3.0,
+        "risk_dollars": 30.0,
+        "reward_risk": 44.0,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "bearish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 172.0,
+        "pnl_dollars": 1720.0,
+        "mfe": 664.6,
+        "mfe_dollars": 6646.0,
+        "mae": 115.2,
+        "mae_dollars": 1152.0,
+        "mae_pct_of_risk": 606.3,
+        "risk": 19.0,
+        "risk_dollars": 190.0,
+        "reward_risk": 9.05,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "primary_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 172.0,
+        "pnl_dollars": 1720.0,
+        "mfe": 664.6,
+        "mfe_dollars": 6646.0,
+        "mae": 115.2,
+        "mae_dollars": 1152.0,
+        "mae_pct_of_risk": 606.3,
+        "risk": 19.0,
+        "risk_dollars": 190.0,
+        "reward_risk": 9.05,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "direction": "SHORT"
+    },
+    "signal_time": "9:00 PM"
+  },
+  {
+    "timestamp": "2026-01-30T20:23:03.060450",
+    "raw_message": "*\ud83c\udfaf LIVE TRADING IDEAS - GCG26*\n_Friday, Jan 30 2026 | 07:53 ET_\n*BIAS:* \ud83d\udfe1 NEUTRAL-BULLISH\n*CONFIDENCE:* MEDIUM\n*\ud83d\udcc8 BULLISH SCENARIO*\nEntry: $5082\nTargets: $5175 \u2192 $5245 \u2192 $5290\nStop: $5060\n*\ud83d\udcc9 BEARISH SCENARIO*\nEntry: $5175\nTargets: $5000 \u2192 $4962 \u2192 $4900\nStop: $5200\n",
+    "contract": "GCG26",
+    "price_at_signal": null,
+    "bias": "BULLISH",
+    "confidence": "MEDIUM",
+    "bullish": {
+      "entry": 5082.0,
+      "targets": [
+        5175.0,
+        5245.0,
+        5290.0
+      ],
+      "stop": 5060.0
+    },
+    "bearish": {
+      "entry": 5175.0,
+      "targets": [
+        5000.0,
+        4962.0,
+        4900.0
+      ],
+      "stop": 5200.0
+    },
+    "key_levels": {},
+    "outcome": {
+      "evaluated_at": "2026-01-31T00:52:32.244163",
+      "session_high": 5480.2,
+      "session_low": 4700.4,
+      "close_price": 4888.2,
+      "bullish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 208.0,
+        "pnl_dollars": 2080.0,
+        "mfe": 398.2,
+        "mfe_dollars": 3982.0,
+        "mae": 381.6,
+        "mae_dollars": 3816.0,
+        "mae_pct_of_risk": 1734.5,
+        "risk": 22.0,
+        "risk_dollars": 220.0,
+        "reward_risk": 9.45,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "bearish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 275.0,
+        "pnl_dollars": 2750.0,
+        "mfe": 474.6,
+        "mfe_dollars": 4746.0,
+        "mae": 305.2,
+        "mae_dollars": 3052.0,
+        "mae_pct_of_risk": 1220.8,
+        "risk": 25.0,
+        "risk_dollars": 250.0,
+        "reward_risk": 11.0,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "primary_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 208.0,
+        "pnl_dollars": 2080.0,
+        "mfe": 398.2,
+        "mfe_dollars": 3982.0,
+        "mae": 381.6,
+        "mae_dollars": 3816.0,
+        "mae_pct_of_risk": 1734.5,
+        "risk": 22.0,
+        "risk_dollars": 220.0,
+        "reward_risk": 9.45,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "direction": "LONG"
+    }
+  },
+  {
+    "timestamp": "2026-01-30T20:23:03.394924",
+    "raw_message": "*\ud83c\udfaf LIVE TRADING IDEAS - GCG26*\n_Fri Jan 30, 2026 \u2014 08:00 ET_\n*BIAS:* \ud83d\udc3b BEARISH\n*CONFIDENCE:* MEDIUM\n*\ud83d\udcc8 BULLISH SCENARIO*\nEntry: $5037\nTargets: $5175 \u2192 $5250 \u2192 $5290\nStop: $5020\n*\ud83d\udcc9 BEARISH SCENARIO*\nEntry: $5175\nTargets: $5082 \u2192 $5037 \u2192 $4963\nStop: $5225\n",
+    "contract": "GCG26",
+    "price_at_signal": null,
+    "bias": "BEARISH",
+    "confidence": "MEDIUM",
+    "bullish": {
+      "entry": 5037.0,
+      "targets": [
+        5175.0,
+        5250.0,
+        5290.0
+      ],
+      "stop": 5020.0
+    },
+    "bearish": {
+      "entry": 5175.0,
+      "targets": [
+        5082.0,
+        5037.0,
+        4963.0
+      ],
+      "stop": 5225.0
+    },
+    "key_levels": {},
+    "outcome": {
+      "evaluated_at": "2026-01-31T00:52:32.244179",
+      "session_high": 5480.2,
+      "session_low": 4700.4,
+      "close_price": 4888.2,
+      "bullish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 253.0,
+        "pnl_dollars": 2530.0,
+        "mfe": 443.2,
+        "mfe_dollars": 4432.0,
+        "mae": 336.6,
+        "mae_dollars": 3366.0,
+        "mae_pct_of_risk": 1980.0,
+        "risk": 17.0,
+        "risk_dollars": 170.0,
+        "reward_risk": 14.88,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "bearish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 212.0,
+        "pnl_dollars": 2120.0,
+        "mfe": 474.6,
+        "mfe_dollars": 4746.0,
+        "mae": 305.2,
+        "mae_dollars": 3052.0,
+        "mae_pct_of_risk": 610.4,
+        "risk": 50.0,
+        "risk_dollars": 500.0,
+        "reward_risk": 4.24,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "primary_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 212.0,
+        "pnl_dollars": 2120.0,
+        "mfe": 474.6,
+        "mfe_dollars": 4746.0,
+        "mae": 305.2,
+        "mae_dollars": 3052.0,
+        "mae_pct_of_risk": 610.4,
+        "risk": 50.0,
+        "risk_dollars": 500.0,
+        "reward_risk": 4.24,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "direction": "SHORT"
+    }
+  },
+  {
+    "timestamp": "2026-01-30T20:23:03.600928",
+    "raw_message": "*\ud83c\udfaf LIVE TRADING IDEAS - GCG26*\n_Friday, Jan 30 2026 | 08:07 ET_\n*BIAS:* \ud83d\udc3b BEARISH\n*CONFIDENCE:* MEDIUM\n*\ud83d\udcc8 BULLISH SCENARIO*\nEntry: $5069\nTargets: $5126 \u2192 $5218 \u2192 $5290\nStop: $5066\n*\ud83d\udcc9 BEARISH SCENARIO*\nEntry: $5126\nTargets: $5082 \u2192 $5069 \u2192 $5000\nStop: $5129\n",
+    "contract": "GCG26",
+    "price_at_signal": null,
+    "bias": "BEARISH",
+    "confidence": "MEDIUM",
+    "bullish": {
+      "entry": 5069.0,
+      "targets": [
+        5126.0,
+        5218.0,
+        5290.0
+      ],
+      "stop": 5066.0
+    },
+    "bearish": {
+      "entry": 5126.0,
+      "targets": [
+        5082.0,
+        5069.0,
+        5000.0
+      ],
+      "stop": 5066.0
+    },
+    "key_levels": {},
+    "outcome": {
+      "evaluated_at": "2026-01-31T00:52:32.244191",
+      "session_high": 5480.2,
+      "session_low": 4700.4,
+      "close_price": 4888.2,
+      "bullish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 221.0,
+        "pnl_dollars": 2210.0,
+        "mfe": 411.2,
+        "mfe_dollars": 4112.0,
+        "mae": 368.6,
+        "mae_dollars": 3686.0,
+        "mae_pct_of_risk": 12286.7,
+        "risk": 3.0,
+        "risk_dollars": 30.0,
+        "reward_risk": 73.67,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "bearish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 126.0,
+        "pnl_dollars": 1260.0,
+        "mfe": 425.6,
+        "mfe_dollars": 4256.0,
+        "mae": 354.2,
+        "mae_dollars": 3542.0,
+        "mae_pct_of_risk": 0,
+        "risk": -60.0,
+        "risk_dollars": -600.0,
+        "reward_risk": -2.1,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "primary_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 126.0,
+        "pnl_dollars": 1260.0,
+        "mfe": 425.6,
+        "mfe_dollars": 4256.0,
+        "mae": 354.2,
+        "mae_dollars": 3542.0,
+        "mae_pct_of_risk": 0,
+        "risk": -60.0,
+        "risk_dollars": -600.0,
+        "reward_risk": -2.1,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "direction": "SHORT"
+    }
+  },
+  {
+    "timestamp": "2026-01-30T20:23:03.800507",
+    "raw_message": "*\ud83c\uddfa\ud83c\uddf8 US IB REPORT - GCG26*\n_Friday, Jan 30 2026 | 9:30 AM ET_\n*BIAS:* \ud83d\udc3b BEARISH\n*CONFIDENCE:* HIGH\n*\ud83d\udcc8 BULLISH SCENARIO*\nEntry: $5018\nTargets: $5067 \u2192 $5116 \u2192 $5245\nStop: $5015\n*\ud83d\udcc9 BEARISH SCENARIO*\nEntry: $5116\nTargets: $5067 \u2192 $5018 \u2192 $4963\nStop: $5119\n",
+    "contract": "GCG26",
+    "price_at_signal": null,
+    "bias": "BEARISH",
+    "confidence": "HIGH",
+    "bullish": {
+      "entry": 5018.0,
+      "targets": [
+        5067.0,
+        5116.0,
+        5245.0
+      ],
+      "stop": 5015.0
+    },
+    "bearish": {
+      "entry": 5116.0,
+      "targets": [
+        5067.0,
+        5018.0,
+        4963.0
+      ],
+      "stop": 5015.0
+    },
+    "key_levels": {},
+    "outcome": {
+      "evaluated_at": "2026-01-31T00:52:32.244204",
+      "session_high": 5480.2,
+      "session_low": 4700.4,
+      "close_price": 4888.2,
+      "bullish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 227.0,
+        "pnl_dollars": 2270.0,
+        "mfe": 462.2,
+        "mfe_dollars": 4622.0,
+        "mae": 317.6,
+        "mae_dollars": 3176.0,
+        "mae_pct_of_risk": 10586.7,
+        "risk": 3.0,
+        "risk_dollars": 30.0,
+        "reward_risk": 75.67,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "bearish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 153.0,
+        "pnl_dollars": 1530.0,
+        "mfe": 415.6,
+        "mfe_dollars": 4156.0,
+        "mae": 364.2,
+        "mae_dollars": 3642.0,
+        "mae_pct_of_risk": 0,
+        "risk": -101.0,
+        "risk_dollars": -1010.0,
+        "reward_risk": -1.51,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "primary_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 153.0,
+        "pnl_dollars": 1530.0,
+        "mfe": 415.6,
+        "mfe_dollars": 4156.0,
+        "mae": 364.2,
+        "mae_dollars": 3642.0,
+        "mae_pct_of_risk": 0,
+        "risk": -101.0,
+        "risk_dollars": -1010.0,
+        "reward_risk": -1.51,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "direction": "SHORT"
+    },
+    "signal_time": "9:30 AM"
+  },
+  {
+    "timestamp": "2026-01-30T20:23:03.988767",
+    "raw_message": "*\ud83d\uddfd NY IB REPORT - GCJ26*\n_Friday, Jan 30 2026 \u2014 10:00 ET_\n*BIAS:* \ud83d\udd3b BEARISH\n*CONFIDENCE:* MEDIUM\n*\ud83d\udcc8 BULLISH SCENARIO*\nEntry: $5039.60\nTargets: $5308.95 \u2192 $5500 \u2192 $5578.30\nStop: $5036\n*\ud83d\udcc9 BEARISH SCENARIO*\nEntry: $5578.30\nTargets: $5308.95 \u2192 $5039.60 \u2192 $5063\nStop: $5581\n",
+    "contract": "GCJ26",
+    "price_at_signal": null,
+    "bias": "BEARISH",
+    "confidence": "MEDIUM",
+    "bullish": {
+      "entry": 5039.6,
+      "targets": [
+        5308.95,
+        5500.0,
+        5578.3
+      ],
+      "stop": 5036.0
+    },
+    "bearish": {
+      "entry": 5578.3,
+      "targets": [
+        5308.95,
+        5039.6,
+        5063.0
+      ],
+      "stop": 5581.0
+    },
+    "key_levels": {},
+    "outcome": {
+      "evaluated_at": "2026-01-31T00:52:32.244215",
+      "session_high": 5480.2,
+      "session_low": 4700.4,
+      "close_price": 4888.2,
+      "bullish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 269.35,
+        "pnl_dollars": 2693.5,
+        "mfe": 440.6,
+        "mfe_dollars": 4406.0,
+        "mae": 339.2,
+        "mae_dollars": 3392.0,
+        "mae_pct_of_risk": 9422.2,
+        "risk": 3.6,
+        "risk_dollars": 36.0,
+        "reward_risk": 74.82,
+        "t1_hit": true,
+        "t2_hit": false,
+        "t3_hit": false,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "bearish_outcome": {
+        "entry_triggered": false,
+        "result": "NO_FILL"
+      },
+      "primary_outcome": {
+        "entry_triggered": false,
+        "result": "NO_FILL"
+      },
+      "direction": "SHORT"
+    }
+  },
+  {
+    "timestamp": "2026-01-30T20:23:04.157502",
+    "raw_message": "*\ud83c\udfaf LIVE TRADING IDEAS - GCG26*\n_Friday Jan 30, 2026 \u2014 10:20 AM ET_\n*BIAS:* \ud83d\udc3b BEARISH\n*CONFIDENCE:* MEDIUM\n*\ud83d\udcc8 BULLISH SCENARIO*\nEntry: $5007\nTargets: $5142 \u2192 $5186 \u2192 $5290\nStop: $5004\n*\ud83d\udcc9 BEARISH SCENARIO*\nEntry: $5142\nTargets: $5006 \u2192 $4963\nStop: $5145\n",
+    "contract": "GCG26",
+    "price_at_signal": null,
+    "bias": "BEARISH",
+    "confidence": "MEDIUM",
+    "bullish": {
+      "entry": 5007.0,
+      "targets": [
+        5142.0,
+        5186.0,
+        5290.0
+      ],
+      "stop": 5004.0
+    },
+    "bearish": {
+      "entry": 5142.0,
+      "targets": [
+        5006.0,
+        4963.0
+      ],
+      "stop": 5004.0
+    },
+    "key_levels": {},
+    "outcome": {
+      "evaluated_at": "2026-01-31T00:52:32.244222",
+      "session_high": 5480.2,
+      "session_low": 4700.4,
+      "close_price": 4888.2,
+      "bullish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 283.0,
+        "pnl_dollars": 2830.0,
+        "mfe": 473.2,
+        "mfe_dollars": 4732.0,
+        "mae": 306.6,
+        "mae_dollars": 3066.0,
+        "mae_pct_of_risk": 10220.0,
+        "risk": 3.0,
+        "risk_dollars": 30.0,
+        "reward_risk": 94.33,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "bearish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 179.0,
+        "pnl_dollars": 1790.0,
+        "mfe": 441.6,
+        "mfe_dollars": 4416.0,
+        "mae": 338.2,
+        "mae_dollars": 3382.0,
+        "mae_pct_of_risk": 0,
+        "risk": -138.0,
+        "risk_dollars": -1380.0,
+        "reward_risk": -1.3,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": false,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "primary_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 179.0,
+        "pnl_dollars": 1790.0,
+        "mfe": 441.6,
+        "mfe_dollars": 4416.0,
+        "mae": 338.2,
+        "mae_dollars": 3382.0,
+        "mae_pct_of_risk": 0,
+        "risk": -138.0,
+        "risk_dollars": -1380.0,
+        "reward_risk": -1.3,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": false,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "direction": "SHORT"
+    },
+    "signal_time": "10:20 AM"
+  },
+  {
+    "timestamp": "2026-01-30T21:09:12.358198",
+    "raw_message": "*\ud83c\udfaf LIVE TRADING IDEAS - GCJ26*\n_Friday Jan 30, 2026 | 12:08 PM ET_\n\n*MARKET CONTEXT*\nPrice: $4,958 | Day Range: $5,480 \u2192 $4,950\nSession: H $5,045 | L $4,950\nVWAP: $5,165 | Delta: +30,560\n\n\u26a0\ufe0f *EXTREME SELL-OFF* \u2014 Down $450+ from day high\n\n*KEY PIVOT: $5,290 (PDPOC)*\n\n*GEX STRUCTURE*\nPOSITIVE GAMMA | GEX: +19.82\nCall Wall: $5,500 | Put Wall: $4,954\nHVL: $5,365 | Flip: $5,310\n\n*\ud83d\udcc8 BULLISH SCENARIO (Bounce Play)*\nEntry: $4,950-$4,960 (Put Wall support)\nTargets: $5,010 \u2192 $5,045 \u2192 $5,100\nStop: $4,935 (below session low)\n_Rationale: Oversold, +delta divergence, put wall support_\n\n*\ud83d\udcc9 BEARISH SCENARIO (Trend Continuation)*\nEntry: $5,010-$5,045 (failed rally)\nTargets: $4,950 \u2192 $4,900 \u2192 $4,850\nStop: $5,065\n\n*BIAS:* \ud83d\udc3b BEARISH\nPrice well below PDPOC & VWAP. Massive intraday collapse. Positive delta may signal short-term bounce but trend is DOWN.\n\n*CONFIDENCE:* MEDIUM\n_Strong trend but oversold at key support. Watch for relief bounces._\n\n*\u26a1 KEY LEVELS TO WATCH:*\n\u2022 Support: $4,950 (Put Wall/Session Low)\n\u2022 Resistance: $5,045-$5,100\n\u2022 Break below $4,950 \u2192 Target $4,850\n",
+    "contract": "GCJ26",
+    "price_at_signal": 4958.0,
+    "bias": "BEARISH",
+    "confidence": "MEDIUM",
+    "bullish": {
+      "entry": 4950.0,
+      "targets": [
+        5010.0,
+        5045.0,
+        5100.0
+      ],
+      "stop": 4935.0
+    },
+    "bearish": {
+      "entry": 5010.0,
+      "targets": [
+        4950.0,
+        4900.0,
+        4850.0
+      ],
+      "stop": 5065.0
+    },
+    "key_levels": {},
+    "outcome": {
+      "evaluated_at": "2026-01-31T00:52:32.244233",
+      "session_high": 5480.2,
+      "session_low": 4700.4,
+      "close_price": 4888.2,
+      "bullish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 150.0,
+        "pnl_dollars": 1500.0,
+        "mfe": 530.2,
+        "mfe_dollars": 5302.0,
+        "mae": 249.6,
+        "mae_dollars": 2496.0,
+        "mae_pct_of_risk": 1664.0,
+        "risk": 15.0,
+        "risk_dollars": 150.0,
+        "reward_risk": 10.0,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "bearish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 160.0,
+        "pnl_dollars": 1600.0,
+        "mfe": 309.6,
+        "mfe_dollars": 3096.0,
+        "mae": 470.2,
+        "mae_dollars": 4702.0,
+        "mae_pct_of_risk": 854.9,
+        "risk": 55.0,
+        "risk_dollars": 550.0,
+        "reward_risk": 2.91,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "primary_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 160.0,
+        "pnl_dollars": 1600.0,
+        "mfe": 309.6,
+        "mfe_dollars": 3096.0,
+        "mae": 470.2,
+        "mae_dollars": 4702.0,
+        "mae_pct_of_risk": 854.9,
+        "risk": 55.0,
+        "risk_dollars": 550.0,
+        "reward_risk": 2.91,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "direction": "SHORT"
+    },
+    "signal_time": "12:08 PM"
+  },
+  {
+    "timestamp": "2026-01-30T21:22:09.117811",
+    "raw_message": "*\ud83c\udfaf LIVE TRADING IDEAS - GCJ26*\n_Friday Jan 30, 2026 \u2014 12:21 PM ET_\n\n*MARKET CONTEXT*\nPrice: $4928.9 | ATH Zone: ~$5500\nSession: H $5045 | L $4921\nVWAP: $5158 | Delta: +32,023\n\n*KEY PIVOT: $5290 (PDPOC)*\n\n*GEX STRUCTURE*\nPOSITIVE GAMMA | GEX: +14.80\nCall Wall: $5500 | Put Wall: $4902\nHVL: $5365 | Flip: $5310\n\n*\ud83d\udcc8 BULLISH SCENARIO*\nEntry: $4902-$4921 (Put Wall / Session Low)\nTargets: $4965 \u2192 $5045 \u2192 $5158\nStop: 3pts below $4902\n\n*\ud83d\udcc9 BEARISH SCENARIO*\nEntry: Break below $4921\nTargets: $4902 \u2192 $4850 \u2192 $4800\nStop: 3pts above $4940\n\n*\u26a0\ufe0f CONTEXT:* Massive intraday selloff from $5410 open. Price collapsed $480+ today. Now testing session lows near put wall support. Watch for bounce OR breakdown.\n\n*BIAS:* \ud83d\udcc9 BEARISH (Price well below PDPOC & VWAP)\n*CONFIDENCE:* HIGH (Strong directional move, clear structure)\n",
+    "contract": "GCJ26",
+    "price_at_signal": 4928.9,
+    "bias": "BEARISH",
+    "confidence": "HIGH",
+    "bullish": {
+      "entry": 4902.0,
+      "targets": [
+        4965.0,
+        5045.0,
+        5158.0
+      ],
+      "stop": 4899.0
+    },
+    "bearish": {
+      "entry": 4921.0,
+      "targets": [
+        4902.0,
+        4850.0,
+        4800.0
+      ],
+      "stop": 4943.0
+    },
+    "key_levels": {},
+    "outcome": {
+      "evaluated_at": "2026-01-31T00:52:32.244244",
+      "session_high": 5480.2,
+      "session_low": 4700.4,
+      "close_price": 4888.2,
+      "bullish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 256.0,
+        "pnl_dollars": 2560.0,
+        "mfe": 578.2,
+        "mfe_dollars": 5782.0,
+        "mae": 201.6,
+        "mae_dollars": 2016.0,
+        "mae_pct_of_risk": 6720.0,
+        "risk": 3.0,
+        "risk_dollars": 30.0,
+        "reward_risk": 85.33,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "bearish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 121.0,
+        "pnl_dollars": 1210.0,
+        "mfe": 220.6,
+        "mfe_dollars": 2206.0,
+        "mae": 559.2,
+        "mae_dollars": 5592.0,
+        "mae_pct_of_risk": 2541.8,
+        "risk": 22.0,
+        "risk_dollars": 220.0,
+        "reward_risk": 5.5,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "primary_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 121.0,
+        "pnl_dollars": 1210.0,
+        "mfe": 220.6,
+        "mfe_dollars": 2206.0,
+        "mae": 559.2,
+        "mae_dollars": 5592.0,
+        "mae_pct_of_risk": 2541.8,
+        "risk": 22.0,
+        "risk_dollars": 220.0,
+        "reward_risk": 5.5,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "direction": "SHORT"
+    },
+    "signal_time": "12:21 PM"
+  },
+  {
+    "timestamp": "2026-01-30T22:26:56.619390",
+    "raw_message": "*\ud83c\udfaf LIVE TRADING IDEAS - GCJ26*\n_Friday Jan 30, 2026 \u2014 1:15 PM ET_\n\n*MARKET CONTEXT*\nPrice: $4,823.00 | Session: H $5,045 | L $4,809\nVWAP: $5,129.85 | Delta: +43,195\n\n*KEY PIVOT: $5,290 (PDPOC)*\n\n*GEX STRUCTURE*\nPOSITIVE Gamma | Call Wall: $5,500 | Put Wall: $4,878\n\n*\ud83d\udcc8 BULLISH TRADE*\nEntry: $4,825.00\nT1: $4,878.00 | T2: $4,950.00 | T3: $5,000.00\nStop: $4,795.00\n\n*BIAS:* BULLISH\n*CONFIDENCE:* MEDIUM\n\n\ud83d\udca1 Price sitting at session lows with strong +43K cumulative delta showing persistent buying. Day drop of $587 from open creates oversold bounce setup. Put wall at $4,878 acts as magnetic target. Watch for failed breakdown below $4,809 as entry trigger.\n",
+    "contract": "GCJ26",
+    "price_at_signal": 4823.0,
+    "bias": "BULLISH",
+    "confidence": "MEDIUM",
+    "bullish": {
+      "entry": 4825.0,
+      "targets": [
+        4878.0,
+        4950.0,
+        5000.0
+      ],
+      "stop": 4795.0
+    },
+    "bearish": {
+      "entry": null,
+      "targets": [],
+      "stop": null
+    },
+    "outcome": {
+      "evaluated_at": "2026-01-31T00:52:32.244255",
+      "session_high": 5480.2,
+      "session_low": 4700.4,
+      "close_price": 4888.2,
+      "bullish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 175.0,
+        "pnl_dollars": 1750.0,
+        "mfe": 655.2,
+        "mfe_dollars": 6552.0,
+        "mae": 124.6,
+        "mae_dollars": 1246.0,
+        "mae_pct_of_risk": 415.3,
+        "risk": 30.0,
+        "risk_dollars": 300.0,
+        "reward_risk": 5.83,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "primary_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 175.0,
+        "pnl_dollars": 1750.0,
+        "mfe": 655.2,
+        "mfe_dollars": 6552.0,
+        "mae": 124.6,
+        "mae_dollars": 1246.0,
+        "mae_pct_of_risk": 415.3,
+        "risk": 30.0,
+        "risk_dollars": 300.0,
+        "reward_risk": 5.83,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "direction": "LONG"
+    },
+    "signal_time": "1:15 PM"
+  },
+  {
+    "timestamp": "2026-01-30T22:28:57.211481",
+    "raw_message": "*\ud83c\udfaf LIVE TRADING IDEAS - GCG26*\n_Friday, Jan 30 2026 | 13:28 ET_\n\n*MARKET CONTEXT*\nPrice: $4768.3 | Session: H $5045.0 | L $4726.5\nVWAP: $5114.30 | Delta: +47,409\n\n*KEY PIVOT: $5290.0 (PDPOC)*\n\n*GEX STRUCTURE*\nPOSITIVE Gamma | Call Wall: $5500 | Put Wall: $4773\n\n\u26a0\ufe0f *EXTREME SELL-OFF* \u2014 Price crashed from $5410 open to $4768 (-$642 | -12%)\n\n*\ud83d\udcc8 BULLISH TRADE (Mean Reversion)*\n_Price at Put Wall support + Session Lows_\n\nEntry: $4770-4780 (at current support)\nT1: $4850 | T2: $4920 | T3: $5000\nStop: $4715\n\n*RATIONALE:*\n\u2022 Price testing Put Wall ($4773) \u2014 key gamma support\n\u2022 Massive gap below VWAP ($5114) \u2014 reversion potential\n\u2022 Session low ($4726) holding as floor\n\u2022 Positive cumulative delta (+47K) showing buyers absorbing\n\n*RISK:* If $4715 breaks, next support ~$4650\n\n*BIAS:* BULLISH (Bounce Play)\n*CONFIDENCE:* MEDIUM\n\n_\u26a0\ufe0f Counter-trend trade. Tight stops mandatory._",
+    "contract": "GCG26",
+    "price_at_signal": 4768.3,
+    "bias": "BULLISH",
+    "confidence": "MEDIUM",
+    "bullish": {
+      "entry": 4770.0,
+      "targets": [
+        4850.0,
+        4920.0,
+        5000.0
+      ],
+      "stop": 4715.0
+    },
+    "bearish": {
+      "entry": null,
+      "targets": [],
+      "stop": null
+    },
+    "outcome": {
+      "evaluated_at": "2026-01-31T00:52:32.244261",
+      "session_high": 5480.2,
+      "session_low": 4700.4,
+      "close_price": 4888.2,
+      "bullish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 230.0,
+        "pnl_dollars": 2300.0,
+        "mfe": 710.2,
+        "mfe_dollars": 7102.0,
+        "mae": 69.6,
+        "mae_dollars": 696.0,
+        "mae_pct_of_risk": 126.5,
+        "risk": 55.0,
+        "risk_dollars": 550.0,
+        "reward_risk": 4.18,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "primary_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 230.0,
+        "pnl_dollars": 2300.0,
+        "mfe": 710.2,
+        "mfe_dollars": 7102.0,
+        "mae": 69.6,
+        "mae_dollars": 696.0,
+        "mae_pct_of_risk": 126.5,
+        "risk": 55.0,
+        "risk_dollars": 550.0,
+        "reward_risk": 4.18,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "direction": "LONG"
+    }
+  },
+  {
+    "timestamp": "2026-01-30T22:33:59.519842",
+    "raw_message": "*\ud83c\udfaf LIVE TRADING IDEAS - GCJ26*\n_Fri Jan 30, 2026 \u2014 1:33 PM ET_\n\n*MARKET CONTEXT*\nPrice: $4,792.5 | Session: H $4,795.7 | L $4,747.0\nVWAP: $5,106.76 | Delta: +44,091\n\n*KEY PIVOT: $5,290.0 (PDPOC)*\n\n*GEX STRUCTURE*\nPOSITIVE GAMMA | Call Wall: $5,500.0 | Put Wall: $4,718.3\n\n*\ud83d\udcc8 BULLISH TRADE*\nEntry: $4,795.0\nT1: $4,850.0 | T2: $4,916.0 | T3: $5,000.0\nStop: $4,710.0\n\n*BIAS:* BULLISH\n*CONFIDENCE:* MEDIUM\n\n_Rationale: Price crashed $688 from day high, now finding support at put wall ($4,718). Cumulative delta +44K shows aggressive buyer absorption. Session delta turning positive on recent 5m bars. Looking for mean reversion bounce toward prior session lows._\n",
+    "contract": "GCJ26",
+    "price_at_signal": 4792.5,
+    "bias": "BULLISH",
+    "confidence": "MEDIUM",
+    "bullish": {
+      "entry": 4795.0,
+      "targets": [
+        4850.0,
+        4916.0,
+        5000.0
+      ],
+      "stop": 4710.0
+    },
+    "bearish": {
+      "entry": null,
+      "targets": [],
+      "stop": null
+    },
+    "outcome": {
+      "evaluated_at": "2026-01-31T00:52:32.244268",
+      "session_high": 5480.2,
+      "session_low": 4700.4,
+      "close_price": 4888.2,
+      "bullish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 205.0,
+        "pnl_dollars": 2050.0,
+        "mfe": 685.2,
+        "mfe_dollars": 6852.0,
+        "mae": 94.6,
+        "mae_dollars": 946.0,
+        "mae_pct_of_risk": 111.3,
+        "risk": 85.0,
+        "risk_dollars": 850.0,
+        "reward_risk": 2.41,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "primary_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 205.0,
+        "pnl_dollars": 2050.0,
+        "mfe": 685.2,
+        "mfe_dollars": 6852.0,
+        "mae": 94.6,
+        "mae_dollars": 946.0,
+        "mae_pct_of_risk": 111.3,
+        "risk": 85.0,
+        "risk_dollars": 850.0,
+        "reward_risk": 2.41,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "direction": "LONG"
+    },
+    "signal_time": "1:33 PM"
+  },
+  {
+    "timestamp": "2026-01-30T22:47:56.374173",
+    "raw_message": "*\ud83c\udfaf LIVE TRADING IDEAS - GCG26*\n_Friday Jan 30, 2026 \u2014 1:47 PM ET_\n\n*MARKET CONTEXT*\nPrice: $4838.2 | Session: H $4846.0 | L $4700.4\nVWAP: $5097.0 | Delta: +43,587\n\n*KEY PIVOT: $5290 (PDPOC)*\n\n*GEX STRUCTURE*\nPOSITIVE GAMMA | Call Wall: $5500 | Put Wall: $4742.5\n\n*\ud83d\udcc8 BULLISH TRADE*\nEntry: $4840\nT1: $4920 | T2: $5000 | T3: $5100\nStop: $4685\n\n*BIAS:* BULLISH\n*CONFIDENCE:* MEDIUM\n\n_Price trading near put wall support after massive flush from $5410 to session low $4700. Positive cumulative delta (+43.5K) suggests buyers absorbing. Bounce setup toward VWAP. Risk/reward favors longs at these levels._",
+    "contract": "GCG26",
+    "price_at_signal": 4838.2,
+    "bias": "BULLISH",
+    "confidence": "MEDIUM",
+    "bullish": {
+      "entry": 4840.0,
+      "targets": [
+        4920.0,
+        5000.0,
+        5100.0
+      ],
+      "stop": 4685.0
+    },
+    "bearish": {
+      "entry": null,
+      "targets": [],
+      "stop": null
+    },
+    "outcome": {
+      "evaluated_at": "2026-01-31T00:52:32.244274",
+      "session_high": 5480.2,
+      "session_low": 4700.4,
+      "close_price": 4888.2,
+      "bullish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 260.0,
+        "pnl_dollars": 2600.0,
+        "mfe": 640.2,
+        "mfe_dollars": 6402.0,
+        "mae": 139.6,
+        "mae_dollars": 1396.0,
+        "mae_pct_of_risk": 90.1,
+        "risk": 155.0,
+        "risk_dollars": 1550.0,
+        "reward_risk": 1.68,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "primary_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 260.0,
+        "pnl_dollars": 2600.0,
+        "mfe": 640.2,
+        "mfe_dollars": 6402.0,
+        "mae": 139.6,
+        "mae_dollars": 1396.0,
+        "mae_pct_of_risk": 90.1,
+        "risk": 155.0,
+        "risk_dollars": 1550.0,
+        "reward_risk": 1.68,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "direction": "LONG"
+    },
+    "signal_time": "1:47 PM"
+  },
+  {
+    "timestamp": "2026-01-30T23:00:47.844650",
+    "raw_message": "*\ud83c\udfaf LIVE TRADING IDEAS - GCJ26*\n_Friday Jan 30, 2026 \u2014 2:00 PM ET_\n\n*MARKET CONTEXT*\nPrice: $4,906.4 | Session: H $4,917.0 | L $4,700.4\nVWAP: $5,091.34 | Delta: +44,042\n\n*KEY PIVOT: $5,290.0 (PDPOC)*\n\n*GEX STRUCTURE*\nPOSITIVE GAMMA | Call Wall: $5,500.0 | Put Wall: $4,842.6\n\n\u26a0\ufe0f EXTREME VOLATILITY \u2014 Day range $4,700.4 - $5,480.2 (~$780 swing!)\n\n*\ud83d\udcc8 BULLISH TRADE*\nEntry: $4,900.0\nT1: $4,950.0 | T2: $5,000.0 | T3: $5,050.0\nStop: $4,840.0\n\n*RATIONALE:*\n\u2022 Price bounced +$200 off session low ($4,700)\n\u2022 Trading just above put wall ($4,842)\n\u2022 Strong positive cumulative delta (+44K) shows buyer absorption\n\u2022 Oversold after massive intraday flush\n\n*BIAS:* BULLISH\n*CONFIDENCE:* MEDIUM\n\n\u26a0\ufe0f Trade small \u2014 extreme vol environment",
+    "contract": "GCJ26",
+    "price_at_signal": 4906.4,
+    "bias": "BULLISH",
+    "confidence": "MEDIUM",
+    "bullish": {
+      "entry": 4900.0,
+      "targets": [
+        4950.0,
+        5000.0,
+        5050.0
+      ],
+      "stop": 4840.0
+    },
+    "bearish": {
+      "entry": null,
+      "targets": [],
+      "stop": null
+    },
+    "outcome": {
+      "evaluated_at": "2026-01-31T00:52:32.244281",
+      "session_high": 5480.2,
+      "session_low": 4700.4,
+      "close_price": 4888.2,
+      "bullish_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 150.0,
+        "pnl_dollars": 1500.0,
+        "mfe": 580.2,
+        "mfe_dollars": 5802.0,
+        "mae": 199.6,
+        "mae_dollars": 1996.0,
+        "mae_pct_of_risk": 332.7,
+        "risk": 60.0,
+        "risk_dollars": 600.0,
+        "reward_risk": 2.5,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "primary_outcome": {
+        "entry_triggered": true,
+        "result": "WIN",
+        "pnl_points": 150.0,
+        "pnl_dollars": 1500.0,
+        "mfe": 580.2,
+        "mfe_dollars": 5802.0,
+        "mae": 199.6,
+        "mae_dollars": 1996.0,
+        "mae_pct_of_risk": 332.7,
+        "risk": 60.0,
+        "risk_dollars": 600.0,
+        "reward_risk": 2.5,
+        "t1_hit": true,
+        "t2_hit": true,
+        "t3_hit": true,
+        "time_to_mae_secs": null,
+        "time_in_trade_secs": null,
+        "time_in_profit_secs": null
+      },
+      "direction": "LONG"
+    },
+    "signal_time": "2:00 PM"
+  }
+]

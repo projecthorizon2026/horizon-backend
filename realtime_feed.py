@@ -10494,9 +10494,14 @@ class LiveDataHandler(BaseHTTPRequestHandler):
         if path == '/trade-analytics':
             try:
                 import os
+                # Try local clawdbot folder first, then project file
                 trades_file = os.path.expanduser('~/.clawdbot/trade_analytics/trades.json')
+                project_trades_file = os.path.join(os.path.dirname(__file__), 'trades_data.json')
                 if os.path.exists(trades_file):
                     with open(trades_file, 'r') as f:
+                        trades = json.load(f)
+                elif os.path.exists(project_trades_file):
+                    with open(project_trades_file, 'r') as f:
                         trades = json.load(f)
                 else:
                     trades = []
