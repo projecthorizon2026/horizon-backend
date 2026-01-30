@@ -2360,7 +2360,7 @@ def classify_open_type():
     day['open_type_confidence'] = confidence
     day['open_direction'] = dominant_dir
 
-def detect_swing_points(candle_history, lookback=50, swing_strength=1):
+def detect_swing_points(candle_history, lookback=50, swing_strength=1, min_range=50):
     """
     Detect recent swing high and swing low using 3-candle structure.
 
@@ -2376,6 +2376,7 @@ def detect_swing_points(candle_history, lookback=50, swing_strength=1):
         candle_history: List of candles with 'high', 'low' keys
         lookback: Number of candles to analyze (default 50 for more swing history)
         swing_strength: Candles on each side to confirm (1 = 3-candle structure)
+        min_range: Minimum swing range to be considered significant (default 50 points)
 
     Returns:
         dict with swing_high, swing_low, swing_direction, and extension info
@@ -2463,15 +2464,34 @@ def detect_swing_points(candle_history, lookback=50, swing_strength=1):
             'extensions_direction': 'up' if swing_direction == 'up' else 'down'
         }
 
-    # Get the most recent swing
-    most_recent = all_swings[-1]
-
-    # Find the most recent swing of the OPPOSITE type to form a complete swing pair
+    # Find the most recent SIGNIFICANT swing pair (range >= min_range)
+    # Start from the most recent swing and work backwards to find a valid pair
+    most_recent = None
     second_most_recent = None
-    for swing in reversed(all_swings[:-1]):
-        if swing[2] != most_recent[2]:  # Different type
-            second_most_recent = swing
+
+    for i in range(len(all_swings) - 1, -1, -1):
+        candidate_recent = all_swings[i]
+        # Find the most recent swing of the OPPOSITE type
+        for j in range(i - 1, -1, -1):
+            if all_swings[j][2] != candidate_recent[2]:  # Different type
+                candidate_second = all_swings[j]
+                # Calculate range
+                swing_range = abs(candidate_recent[1] - candidate_second[1])
+                if swing_range >= min_range:
+                    most_recent = candidate_recent
+                    second_most_recent = candidate_second
+                    break
+        if most_recent and second_most_recent:
             break
+
+    # If no significant swing found, fallback to any swing pair
+    if not most_recent or not second_most_recent:
+        if len(all_swings) >= 2:
+            most_recent = all_swings[-1]
+            for swing in reversed(all_swings[:-1]):
+                if swing[2] != most_recent[2]:
+                    second_most_recent = swing
+                    break
 
     if not second_most_recent:
         # All swings are same type, use the two most recent of same type boundaries
@@ -10584,7 +10604,7 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             'volume_1h': s['volume_1h'],
 
             # Swing Detection (for Fibonacci retracement)
-            'swing': detect_swing_points(s['volume_5m'].get('history', []), lookback=30, swing_strength=2),
+            'swing': detect_swing_points(s['volume_5m'].get('history', []), lookback=50, swing_strength=1, min_range=50),
 
             # Big Trades (Order Flow)
             'big_trades': s.get('big_trades', []),

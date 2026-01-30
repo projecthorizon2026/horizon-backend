@@ -1744,36 +1744,61 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
   // Fibonacci retracement levels - direction based on price position
   // For BEARISH day (price in lower half): retracement from LOW upward (23.6% near low)
   // For BULLISH day (price in upper half): retracement from HIGH downward (23.6% near high)
-  const fibDayHigh = metrics?.dayHigh || metrics?.day_high || 0;
-  const fibDayLow = metrics?.dayLow || metrics?.day_low || 0;
+  // IMPORTANT: Use Previous Day (PD) values when current day range is too small (new session just started)
+  const rawDayHigh = metrics?.dayHigh || metrics?.day_high || 0;
+  const rawDayLow = metrics?.dayLow || metrics?.day_low || 0;
+  const rawDayRange = rawDayHigh - rawDayLow;
+  const pdHigh = metrics?.pd_high || 0;
+  const pdLow = metrics?.pd_low || 0;
+  const pdRange = pdHigh - pdLow;
+
+  // Use PD values if current day range < 100 points (new day just started)
+  const usePD = rawDayRange < 100 && pdRange > 100;
+  const fibDayHigh = usePD ? pdHigh : rawDayHigh;
+  const fibDayLow = usePD ? pdLow : rawDayLow;
   const fibDayRange = fibDayHigh - fibDayLow;
   const fibDayMid = (fibDayHigh + fibDayLow) / 2;
-  const isBearishDay = currentPrice < fibDayMid;  // Price below midpoint = bearish
+  // When using PD values, check if PD was a down day (pd_close < pd_open) or default to bearish
+  // When using current day, check if current price is below day midpoint
+  const pdClose = metrics?.pd_close || 0;
+  const pdOpen = metrics?.pd_open || 0;
+  const isBearishDay = usePD
+    ? (pdClose > 0 && pdOpen > 0 ? pdClose < pdOpen : true)  // PD: bearish if closed below open
+    : (currentPrice > 0 ? currentPrice < fibDayMid : true);  // Current: bearish if below midpoint
 
   // Day Fib: Retracement levels from the extreme price moved FROM
   // Bearish day: moved from high, now retracing UP from low → 23.6% is near low
   // Bullish day: moved from low, now retracing DOWN from high → 23.6% is near high
   // Extensions: -27% and -62% beyond the 0% level (potential continuation targets)
+  // Day Fib follows TradingView convention:
+  // BEARISH day: 100% at High, 0% at Low, Extensions -27%/-62% BELOW low
+  // BULLISH day: 100% at Low, 0% at High, Extensions -27%/-62% ABOVE high
   const dayFibLevels = fibDayRange > 0 ? (isBearishDay ? [
-    // Bearish day: Retracement from LOW upward (0% at low, 100% at high)
-    // Extensions BELOW day low: 127% and 162% (beyond 100%)
-    { price: fibDayLow - (fibDayRange * 0.27), name: 'Day Fib 127%', color: '#ff1744' },  // Extension below low
-    { price: fibDayLow - (fibDayRange * 0.618), name: 'Day Fib 162%', color: '#d50000' },  // Deep extension
-    { price: fibDayLow + (fibDayRange * 0.236), name: 'Day Fib 23.6%', color: '#10B981' },  // Near low
+    // Bearish day: 100% at HIGH, 0% at LOW
+    // Retracement levels go UP from 0% (low) toward 100% (high)
+    // Extensions go BELOW 0% (below low): -27%, -62%
+    { price: fibDayLow - (fibDayRange * 0.618), name: 'Day Fib -62%', color: '#d50000' },  // Deep extension below low
+    { price: fibDayLow - (fibDayRange * 0.27), name: 'Day Fib -27%', color: '#ff1744' },  // Extension below low
+    { price: fibDayLow, name: 'Day Fib 0%', color: '#10B981' },  // Low
+    { price: fibDayLow + (fibDayRange * 0.236), name: 'Day Fib 23.6%', color: '#22c55e' },
     { price: fibDayLow + (fibDayRange * 0.382), name: 'Day Fib 38.2%', color: '#00bcd4' },
     { price: fibDayLow + (fibDayRange * 0.5), name: 'Day Fib 50%', color: '#f97316' },
     { price: fibDayLow + (fibDayRange * 0.618), name: 'Day Fib 61.8%', color: '#ffd93d' },
-    { price: fibDayLow + (fibDayRange * 0.786), name: 'Day Fib 78.6%', color: '#ff6b6b' },  // Near high
+    { price: fibDayLow + (fibDayRange * 0.786), name: 'Day Fib 78.6%', color: '#ff6b6b' },
+    { price: fibDayHigh, name: 'Day Fib 100%', color: '#ff4466' },  // High
   ] : [
-    // Bullish day: Retracement from HIGH downward (0% at high, 100% at low)
-    // Extensions ABOVE day high: -27% and -62% (beyond 0%)
+    // Bullish day: 100% at LOW, 0% at HIGH
+    // Retracement levels go DOWN from 0% (high) toward 100% (low)
+    // Extensions go ABOVE 0% (above high): -27%, -62%
+    { price: fibDayHigh + (fibDayRange * 0.618), name: 'Day Fib -62%', color: '#00c853' },  // Deep extension above high
     { price: fibDayHigh + (fibDayRange * 0.27), name: 'Day Fib -27%', color: '#00e676' },  // Extension above high
-    { price: fibDayHigh + (fibDayRange * 0.618), name: 'Day Fib -62%', color: '#00c853' },  // Deep extension
-    { price: fibDayHigh - (fibDayRange * 0.236), name: 'Day Fib 23.6%', color: '#10B981' },  // Near high
+    { price: fibDayHigh, name: 'Day Fib 0%', color: '#10B981' },  // High
+    { price: fibDayHigh - (fibDayRange * 0.236), name: 'Day Fib 23.6%', color: '#22c55e' },
     { price: fibDayHigh - (fibDayRange * 0.382), name: 'Day Fib 38.2%', color: '#00bcd4' },
     { price: fibDayHigh - (fibDayRange * 0.5), name: 'Day Fib 50%', color: '#f97316' },
     { price: fibDayHigh - (fibDayRange * 0.618), name: 'Day Fib 61.8%', color: '#ffd93d' },
-    { price: fibDayHigh - (fibDayRange * 0.786), name: 'Day Fib 78.6%', color: '#ff6b6b' },  // Near low
+    { price: fibDayHigh - (fibDayRange * 0.786), name: 'Day Fib 78.6%', color: '#ff6b6b' },
+    { price: fibDayLow, name: 'Day Fib 100%', color: '#ff4466' },  // Low
   ]) : [];
 
   // Swing Fibonacci levels (from 5m candle swing detection with 3-candle structure)
@@ -1787,28 +1812,35 @@ const PriceLadder = ({ metrics = {}, gexData = {} }) => {
   // Swing Fib: Based on swing direction
   // UP swing (Low→High): Retracement from HIGH down, Extensions ABOVE high (-27%, -62%)
   // DOWN swing (High→Low): Retracement from LOW up, Extensions BELOW low (127%, 162%)
-  const swingFibLevels = swingRange > 20 ? (swingDir === 'up' ? [
-    // UP swing: Price moved from low to high
-    // Retracement from HIGH downward toward swing low
-    // Extensions ABOVE swing high (price continuation targets)
+  // Swing Fib follows TradingView convention:
+  // UP swing (low→high): 100% at High, 0% at Low, extensions -27%/-62% ABOVE high
+  // DOWN swing (high→low): 100% at High, 0% at Low, extensions -27%/-62% BELOW low
+  const swingFibLevels = swingRange > 50 ? (swingDir === 'up' ? [
+    // UP swing: Price moved from low to high (bullish)
+    // 0% at swing high, retracement down toward 100% (swing low)
+    // Extensions ABOVE swing high: -27%, -62%
     { price: swingHigh + (swingRange * 0.618), name: 'Swing -62%', color: '#00E676' },
     { price: swingHigh + (swingRange * 0.27), name: 'Swing -27%', color: '#69F0AE' },
+    { price: swingHigh, name: 'Swing 0%', color: '#A78BFA' },
     { price: swingHigh - (swingRange * 0.236), name: 'Swing 23.6%', color: '#A78BFA' },
     { price: swingHigh - (swingRange * 0.382), name: 'Swing 38.2%', color: '#8B5CF6' },
     { price: swingHigh - (swingRange * 0.5), name: 'Swing 50%', color: '#7C3AED' },
     { price: swingHigh - (swingRange * 0.618), name: 'Swing 61.8%', color: '#6D28D9' },
     { price: swingHigh - (swingRange * 0.786), name: 'Swing 78.6%', color: '#5B21B6' },
+    { price: swingLow, name: 'Swing 100%', color: '#4C1D95' },
   ] : swingDir === 'down' ? [
-    // DOWN swing: Price moved from high to low
-    // Retracement from LOW upward toward swing high
-    // Extensions BELOW swing low (price continuation targets)
-    { price: swingLow - (swingRange * 0.618), name: 'Swing 162%', color: '#AA00FF' },
-    { price: swingLow - (swingRange * 0.27), name: 'Swing 127%', color: '#E040FB' },
-    { price: swingLow + (swingRange * 0.236), name: 'Swing 23.6%', color: '#A78BFA' },
-    { price: swingLow + (swingRange * 0.382), name: 'Swing 38.2%', color: '#8B5CF6' },
-    { price: swingLow + (swingRange * 0.5), name: 'Swing 50%', color: '#7C3AED' },
-    { price: swingLow + (swingRange * 0.618), name: 'Swing 61.8%', color: '#6D28D9' },
+    // DOWN swing: Price moved from high to low (bearish)
+    // 100% at swing high, 0% at swing low
+    // Extensions BELOW swing low: -27%, -62%
+    { price: swingHigh, name: 'Swing 100%', color: '#AA00FF' },
     { price: swingLow + (swingRange * 0.786), name: 'Swing 78.6%', color: '#5B21B6' },
+    { price: swingLow + (swingRange * 0.618), name: 'Swing 61.8%', color: '#6D28D9' },
+    { price: swingLow + (swingRange * 0.5), name: 'Swing 50%', color: '#7C3AED' },
+    { price: swingLow + (swingRange * 0.382), name: 'Swing 38.2%', color: '#8B5CF6' },
+    { price: swingLow + (swingRange * 0.236), name: 'Swing 23.6%', color: '#A78BFA' },
+    { price: swingLow, name: 'Swing 0%', color: '#E040FB' },
+    { price: swingLow - (swingRange * 0.27), name: 'Swing -27%', color: '#ff1744' },
+    { price: swingLow - (swingRange * 0.618), name: 'Swing -62%', color: '#d50000' },
   ] : []) : [];
 
   const referenceLevels = [
@@ -21066,13 +21098,24 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
 
       {/* Fibonacci Levels & Range Location */}
       {(() => {
-        const dayHigh = metrics.dayHigh || metrics.day_high || 0;
-        const dayLow = metrics.dayLow || metrics.day_low || 0;
+        // Use PD values when current day range is too small (new session just started)
+        const rawDayHigh = metrics.dayHigh || metrics.day_high || 0;
+        const rawDayLow = metrics.dayLow || metrics.day_low || 0;
+        const rawDayRange = rawDayHigh - rawDayLow;
+        const pdHigh = metrics.pd_high || 0;
+        const pdLow = metrics.pd_low || 0;
+        const pdRange = pdHigh - pdLow;
+
+        // Use PD values if current day range < 100 points (new day just started)
+        const usePD = rawDayRange < 100 && pdRange > 100;
+        const dayHigh = usePD ? pdHigh : rawDayHigh;
+        const dayLow = usePD ? pdLow : rawDayLow;
         const currentPrice = metrics.current_price || 0;
         const dayRange = dayHigh - dayLow;
 
-        // Skip rendering if we don't have valid data
-        if (dayRange <= 0 || currentPrice <= 0) {
+        // Skip rendering only if we don't have valid day range
+        // Show Fibonacci levels even when market closed (price = 0)
+        if (dayRange <= 0) {
           return (
             <div style={{
               background: 'linear-gradient(135deg, rgba(249,115,22,0.05) 0%, rgba(255,68,102,0.05) 100%)',
@@ -21088,15 +21131,24 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
           );
         }
 
-        // Determine day direction: Bearish if price below midpoint, Bullish otherwise
+        // Determine day direction based on whether using PD values
+        // When using PD: bearish if pd_close < pd_open (down day)
+        // When using current day: bearish if current price < midpoint
         const dayMid = (dayHigh + dayLow) / 2;
-        const isBearishDay = currentPrice < dayMid;
+        const pdClose = metrics.pd_close || 0;
+        const pdOpen = metrics.pd_open || 0;
+        const isBearishDay = usePD
+          ? (pdClose > 0 && pdOpen > 0 ? pdClose < pdOpen : true)
+          : (currentPrice > 0 ? currentPrice < dayMid : true);
 
         // Calculate Fibonacci retracement levels based on day direction
         // BEARISH day: Price went down, now retracing UP from low (0% at low, 100% at high)
         //   Extensions: 127% and 162% BELOW the low (beyond 100%)
         // BULLISH day: Price went up, now retracing DOWN from high (0% at high, 100% at low)
         //   Extensions: -27% and -62% ABOVE the high (beyond 0%)
+        // TradingView convention:
+        // BEARISH: 100% at High, 0% at Low, extensions -27%/-62% BELOW low
+        // BULLISH: 0% at High, 100% at Low, extensions -27%/-62% ABOVE high
         const fibLevels = isBearishDay ? [
           { level: '100%', price: dayHigh, color: '#ff4466', desc: 'Day High' },
           { level: '78.6%', price: dayLow + (dayRange * 0.786), color: '#ff6b6b', desc: 'Deep Retracement' },
@@ -21105,8 +21157,8 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
           { level: '38.2%', price: dayLow + (dayRange * 0.382), color: '#00bcd4', desc: 'Shallow Retracement' },
           { level: '23.6%', price: dayLow + (dayRange * 0.236), color: '#10B981', desc: 'Minor Retracement' },
           { level: '0%', price: dayLow, color: '#00ff88', desc: 'Day Low' },
-          { level: '127%', price: dayLow - (dayRange * 0.27), color: '#ff1744', desc: 'Extension' },
-          { level: '162%', price: dayLow - (dayRange * 0.618), color: '#d50000', desc: 'Deep Extension' },
+          { level: '-27%', price: dayLow - (dayRange * 0.27), color: '#ff1744', desc: 'Extension' },
+          { level: '-62%', price: dayLow - (dayRange * 0.618), color: '#d50000', desc: 'Deep Extension' },
         ] : [
           { level: '0%', price: dayHigh, color: '#ff4466', desc: 'Day High' },
           { level: '23.6%', price: dayHigh - (dayRange * 0.236), color: '#ff6b6b', desc: 'Minor Retracement' },
@@ -21275,7 +21327,7 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
               </div>
 
               {/* Swing Fibonacci Retracement */}
-              {swingRange > 20 && (
+              {swingRange > 50 && (
                 <div style={{ flex: '0 0 auto', borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: 16 }}>
                   <div style={{ fontSize: 10, color: '#A78BFA', marginBottom: 8 }}>Swing Fib {swingDir === 'up' ? '↑' : swingDir === 'down' ? '↓' : '—'}</div>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -21292,7 +21344,7 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
                         { level: '78.6%', price: swingHigh - swingRange * 0.786, color: '#4C1D95' },
                         { level: '100%', price: swingLow, color: '#3B0764' },
                       ] : [
-                        // DOWN swing: Extensions BELOW swing low (127%, 162%), retracement from low up
+                        // DOWN swing: 100% at HIGH, 0% at LOW, Extensions BELOW low (-27%, -62%)
                         { level: '100%', price: swingHigh, color: '#3B0764' },
                         { level: '78.6%', price: swingLow + swingRange * 0.786, color: '#4C1D95' },
                         { level: '61.8%', price: swingLow + swingRange * 0.618, color: '#5B21B6' },
@@ -21300,8 +21352,8 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
                         { level: '38.2%', price: swingLow + swingRange * 0.382, color: '#7C3AED' },
                         { level: '23.6%', price: swingLow + swingRange * 0.236, color: '#8B5CF6' },
                         { level: '0%', price: swingLow, color: '#A78BFA' },
-                        { level: '127%', price: swingLow - swingRange * 0.27, color: '#E040FB' },
-                        { level: '162%', price: swingLow - swingRange * 0.618, color: '#AA00FF' },
+                        { level: '-27%', price: swingLow - swingRange * 0.27, color: '#ff1744' },
+                        { level: '-62%', price: swingLow - swingRange * 0.618, color: '#d50000' },
                       ]).map((fib, i) => (
                         <span key={i} style={{ color: fib.color, fontWeight: 500, lineHeight: 1 }}>{fib.level}</span>
                       ))}
@@ -21339,7 +21391,7 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
                         { level: '78.6%', price: swingHigh - swingRange * 0.786, color: '#4C1D95', desc: '' },
                         { level: '100%', price: swingLow, color: '#3B0764', desc: 'Swing Low' },
                       ] : [
-                        // DOWN swing: Extensions BELOW swing low (127%, 162%), retracement from low up
+                        // DOWN swing: 100% at HIGH, 0% at LOW, Extensions BELOW low (-27%, -62%)
                         { level: '100%', price: swingHigh, color: '#3B0764', desc: 'Swing High' },
                         { level: '78.6%', price: swingLow + swingRange * 0.786, color: '#4C1D95', desc: '' },
                         { level: '61.8%', price: swingLow + swingRange * 0.618, color: '#5B21B6', desc: 'Golden' },
@@ -21347,8 +21399,8 @@ const LiveDashboard = ({ settings, onSettingsChange }) => {
                         { level: '38.2%', price: swingLow + swingRange * 0.382, color: '#7C3AED', desc: '' },
                         { level: '23.6%', price: swingLow + swingRange * 0.236, color: '#8B5CF6', desc: '' },
                         { level: '0%', price: swingLow, color: '#A78BFA', desc: 'Swing Low' },
-                        { level: '127%', price: swingLow - swingRange * 0.27, color: '#E040FB', desc: 'Extension' },
-                        { level: '162%', price: swingLow - swingRange * 0.618, color: '#AA00FF', desc: 'Deep Ext' },
+                        { level: '-27%', price: swingLow - swingRange * 0.27, color: '#ff1744', desc: 'Extension' },
+                        { level: '-62%', price: swingLow - swingRange * 0.618, color: '#d50000', desc: 'Deep Ext' },
                       ]).map((fib, i) => {
                         const isNear = Math.abs(currentPrice - fib.price) < (swingRange * 0.03);
                         return (
