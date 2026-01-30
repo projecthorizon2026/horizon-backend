@@ -10605,19 +10605,23 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             'volume_1h': s['volume_1h'],
 
             # Swing Detection (for Fibonacci retracement)
-            # Falls back to session_high + day_low for most recent significant swing
-            'swing': (lambda swing_result: swing_result if swing_result.get('swing_high', 0) > 0 and swing_result.get('swing_low', 0) > 0 else (lambda sh, sl: {
-                'swing_high': sh,
-                'swing_low': sl,
-                # UP swing if price is above midpoint of the swing range (retracing from high)
-                'swing_direction': 'up' if s.get('current_price', 0) > ((sh + sl) / 2) else 'down',
-                'swing_high_idx': -1, 'swing_low_idx': -1,
-                'swing_type': 'session_fallback',
-                'extensions_direction': 'up' if s.get('current_price', 0) > ((sh + sl) / 2) else 'down'
-            })(
-                # Use session_high for recent swing high (more accurate than day_high)
+            # Uses larger of: detected swing OR session_high/day_low swing
+            'swing': (lambda detected: (lambda session_sh, session_sl:
+                # If session swing (session_high - day_low) is larger than detected swing, use session
+                (lambda detected_range, session_range: {
+                    'swing_high': session_sh if session_range > detected_range else detected.get('swing_high', 0),
+                    'swing_low': session_sl if session_range > detected_range else detected.get('swing_low', 0),
+                    'swing_direction': 'up' if s.get('current_price', 0) > ((session_sh + session_sl) / 2) else 'down' if session_range > detected_range else detected.get('swing_direction', 'up'),
+                    'swing_high_idx': -1 if session_range > detected_range else detected.get('swing_high_idx', -1),
+                    'swing_low_idx': -1 if session_range > detected_range else detected.get('swing_low_idx', -1),
+                    'swing_type': 'session_preferred' if session_range > detected_range else detected.get('swing_type', 'detected'),
+                    'extensions_direction': 'up' if s.get('current_price', 0) > ((session_sh + session_sl) / 2) else 'down' if session_range > detected_range else detected.get('extensions_direction', 'up')
+                })(
+                    detected.get('swing_high', 0) - detected.get('swing_low', 0),
+                    session_sh - session_sl
+                )
+            )(
                 s.get('session_high', 0) if s.get('session_high', 0) > 0 else s.get('day_high', 0),
-                # Use day_low for swing low (captures the full move from day low)
                 s.get('day_low', 0) if 0 < s.get('day_low', 999999) < 999999 else s.get('session_low', 0)
             ))(detect_swing_points(s['volume_5m'].get('history', []), lookback=50, swing_strength=1, min_range=100)),
 
