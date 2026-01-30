@@ -10605,15 +10605,21 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             'volume_1h': s['volume_1h'],
 
             # Swing Detection (for Fibonacci retracement)
-            # Falls back to day high/low if 5m history insufficient
-            'swing': (lambda swing_result: swing_result if swing_result.get('swing_high', 0) > 0 and swing_result.get('swing_low', 0) > 0 else {
-                'swing_high': s.get('day_high', 0) if s.get('day_high', 0) > 0 else (s.get('session_high', 0) if s.get('session_high', 0) > 0 else 0),
-                'swing_low': s.get('day_low', 0) if 0 < s.get('day_low', 999999) < 999999 else (s.get('session_low', 0) if 0 < s.get('session_low', 999999) < 999999 else 0),
-                'swing_direction': 'up' if s.get('current_price', 0) > ((s.get('day_high', 0) + s.get('day_low', 0)) / 2) else 'down',
+            # Falls back to session_high + day_low for most recent significant swing
+            'swing': (lambda swing_result: swing_result if swing_result.get('swing_high', 0) > 0 and swing_result.get('swing_low', 0) > 0 else (lambda sh, sl: {
+                'swing_high': sh,
+                'swing_low': sl,
+                # UP swing if price is above midpoint of the swing range (retracing from high)
+                'swing_direction': 'up' if s.get('current_price', 0) > ((sh + sl) / 2) else 'down',
                 'swing_high_idx': -1, 'swing_low_idx': -1,
-                'swing_type': 'day_fallback',
-                'extensions_direction': 'up' if s.get('current_price', 0) > ((s.get('day_high', 0) + s.get('day_low', 0)) / 2) else 'down'
-            })(detect_swing_points(s['volume_5m'].get('history', []), lookback=50, swing_strength=1, min_range=30)),
+                'swing_type': 'session_fallback',
+                'extensions_direction': 'up' if s.get('current_price', 0) > ((sh + sl) / 2) else 'down'
+            })(
+                # Use session_high for recent swing high (more accurate than day_high)
+                s.get('session_high', 0) if s.get('session_high', 0) > 0 else s.get('day_high', 0),
+                # Use day_low for swing low (captures the full move from day low)
+                s.get('day_low', 0) if 0 < s.get('day_low', 999999) < 999999 else s.get('session_low', 0)
+            ))(detect_swing_points(s['volume_5m'].get('history', []), lookback=50, swing_strength=1, min_range=100)),
 
             # Big Trades (Order Flow)
             'big_trades': s.get('big_trades', []),
