@@ -10606,15 +10606,18 @@ class LiveDataHandler(BaseHTTPRequestHandler):
 
             # Swing Detection (for Fibonacci retracement)
             # Uses max high from 5m history and day_low for most accurate recent swing
+            # Direction is 'up' because we're measuring from day_low UP to recent high
             'swing': (lambda history_5m: (lambda hist_high, hist_low:
                 (lambda swing_sh, swing_sl: {
                     'swing_high': round(swing_sh, 1),
                     'swing_low': round(swing_sl, 1),
-                    'swing_direction': 'up' if s.get('current_price', 0) > ((swing_sh + swing_sl) / 2) else 'down',
+                    # Always 'up' since we're using day_low→session_high (low came first)
+                    'swing_direction': 'up',
                     'swing_high_idx': -1,
                     'swing_low_idx': -1,
                     'swing_type': 'history_based',
-                    'extensions_direction': 'up' if s.get('current_price', 0) > ((swing_sh + swing_sl) / 2) else 'down'
+                    # Extensions above the high for UP swing
+                    'extensions_direction': 'up'
                 })(
                     # swing_high = max of: 5m history high, session_high
                     max(hist_high, s.get('session_high', 0)),
