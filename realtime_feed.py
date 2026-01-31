@@ -10962,6 +10962,8 @@ class LiveDataHandler(BaseHTTPRequestHandler):
         # Deribit options data for BTC gamma/GEX levels
         if path == '/deribit-options':
             options_data = fetch_deribit_options()
+            self.wfile.write(json.dumps(options_data).encode())
+            return
 
         # Trade metrics endpoint for Clawdbot analytics
         if path == '/trade-metrics':
