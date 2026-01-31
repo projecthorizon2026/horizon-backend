@@ -5847,71 +5847,114 @@ def fetch_whale_transactions():
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
 
-        # Method 1: Blockchain.com recent large transactions
-        # Get recent blocks and find large transactions
+        current_price = state.get('price', 84000)
+
+        # Method 1: Binance Large Trades API (liquidations and large fills)
+        try:
+            # Get recent large trades from Binance
+            url = "https://fapi.binance.com/fapi/v1/aggTrades?symbol=BTCUSDT&limit=500"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
+                trades = json.loads(response.read().decode())
+
+                # Aggregate trades by 1-minute buckets and find large volumes
+                bucket_volume = {}
+                for trade in trades:
+                    qty = float(trade.get('q', 0))
+                    price = float(trade.get('p', 0))
+                    is_buyer = trade.get('m', False)  # True = seller is maker (sell aggression)
+                    ts = trade.get('T', 0) // 60000  # 1-min bucket
+
+                    if ts not in bucket_volume:
+                        bucket_volume[ts] = {'buy': 0, 'sell': 0, 'ts': trade.get('T', 0)}
+                    if is_buyer:
+                        bucket_volume[ts]['sell'] += qty
+                    else:
+                        bucket_volume[ts]['buy'] += qty
+
+                # Find buckets with large net volume (whale activity proxy)
+                for ts, vol in bucket_volume.items():
+                    net = vol['buy'] - vol['sell']
+                    total = vol['buy'] + vol['sell']
+
+                    if total >= 50:  # 50+ BTC in a minute = significant
+                        tx_type = 'LARGE_BUY' if net > 10 else ('LARGE_SELL' if net < -10 else 'NEUTRAL')
+                        transactions.append({
+                            'hash': f"binance_{ts}",
+                            'btc': round(total, 2),
+                            'usd': round(total * current_price, 0),
+                            'type': tx_type,
+                            'timestamp': vol['ts'] / 1000,
+                            'net_btc': round(net, 2),
+                            'source': 'Binance Futures'
+                        })
+        except Exception as e:
+            print(f"⚠️ Binance large trades fetch failed: {e}")
+
+        # Method 2: Coinbase large orders from order book depth
+        try:
+            url = "https://api.exchange.coinbase.com/products/BTC-USD/book?level=2"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
+                book = json.loads(response.read().decode())
+
+                # Find large bid walls (support/accumulation)
+                bids = book.get('bids', [])[:50]
+                for bid in bids:
+                    price, size, _ = float(bid[0]), float(bid[1]), bid[2]
+                    if size >= 10:  # 10+ BTC bid
+                        transactions.append({
+                            'hash': f"coinbase_bid_{price}",
+                            'btc': round(size, 2),
+                            'usd': round(size * price, 0),
+                            'type': 'BID_WALL',
+                            'price': price,
+                            'timestamp': now,
+                            'source': 'Coinbase'
+                        })
+
+                # Find large ask walls (resistance/distribution)
+                asks = book.get('asks', [])[:50]
+                for ask in asks:
+                    price, size, _ = float(ask[0]), float(ask[1]), ask[2]
+                    if size >= 10:  # 10+ BTC ask
+                        transactions.append({
+                            'hash': f"coinbase_ask_{price}",
+                            'btc': round(size, 2),
+                            'usd': round(size * price, 0),
+                            'type': 'ASK_WALL',
+                            'price': price,
+                            'timestamp': now,
+                            'source': 'Coinbase'
+                        })
+        except Exception as e:
+            print(f"⚠️ Coinbase order book fetch failed: {e}")
+
+        # Method 3: Blockchain.com recent large transactions (fallback)
         try:
             url = "https://blockchain.info/unconfirmed-transactions?format=json"
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
+            with urllib.request.urlopen(req, context=ctx, timeout=5) as response:
                 data = json.loads(response.read().decode())
                 txs = data.get('txs', [])
 
-                for tx in txs[:50]:  # Check last 50 unconfirmed
-                    # Calculate total output value in BTC
+                for tx in txs[:30]:
                     total_btc = sum(out.get('value', 0) for out in tx.get('out', [])) / 100000000
-
-                    if total_btc >= 10:  # 10+ BTC threshold
-                        # Determine if it's going to an exchange (selling) or from exchange (buying)
-                        outputs = tx.get('out', [])
-                        is_exchange_inflow = False
-                        is_exchange_outflow = False
-
-                        # Check for known exchange addresses patterns
-                        for out in outputs:
-                            addr = out.get('addr', '')
-                            # Simplified: addresses starting with bc1q... are often exchange cold wallets
-                            if addr and (addr.startswith('bc1q') or addr.startswith('3')):
-                                is_exchange_inflow = True
-
+                    if total_btc >= 50:  # 50+ BTC threshold
                         transactions.append({
                             'hash': tx.get('hash', '')[:16] + '...',
-                            'btc': round(total_btc, 4),
-                            'usd': 0,  # Will be calculated with current price
-                            'type': 'EXCHANGE_INFLOW' if is_exchange_inflow else 'WHALE_TRANSFER',
+                            'btc': round(total_btc, 2),
+                            'usd': round(total_btc * current_price, 0),
+                            'type': 'ON_CHAIN',
                             'timestamp': tx.get('time', now),
-                            'confirmations': 0
+                            'source': 'Bitcoin Network'
                         })
         except Exception as e:
             print(f"⚠️ Blockchain.com fetch failed: {e}")
 
-        # Method 2: Blockchair for confirmed large transactions
-        try:
-            url = "https://api.blockchair.com/bitcoin/transactions?q=output_total(1000000000..)&s=time(desc)&limit=20"
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
-                data = json.loads(response.read().decode())
-                for tx in data.get('data', []):
-                    total_btc = tx.get('output_total', 0) / 100000000
-                    if total_btc >= 100:  # 100+ BTC for confirmed
-                        transactions.append({
-                            'hash': tx.get('hash', '')[:16] + '...',
-                            'btc': round(total_btc, 2),
-                            'usd': 0,
-                            'type': 'LARGE_TRANSFER',
-                            'timestamp': tx.get('time', ''),
-                            'confirmations': tx.get('block_id', 0)
-                        })
-        except Exception as e:
-            print(f"⚠️ Blockchair fetch failed: {e}")
-
         # Sort by BTC amount descending
         transactions.sort(key=lambda x: x['btc'], reverse=True)
         transactions = transactions[:20]  # Keep top 20
-
-        # Calculate USD values
-        current_price = state.get('price', 84000)
-        for tx in transactions:
-            tx['usd'] = round(tx['btc'] * current_price, 0)
 
         whale_transactions_cache['data'] = transactions
         whale_transactions_cache['timestamp'] = now
@@ -5934,42 +5977,56 @@ def get_whale_summary():
         return {
             'total_btc_moved': 0,
             'total_usd_moved': 0,
-            'exchange_inflows': 0,
-            'exchange_outflows': 0,
-            'whale_transfers': 0,
+            'large_buys': 0,
+            'large_sells': 0,
+            'bid_walls': 0,
+            'ask_walls': 0,
             'net_flow': 'NEUTRAL',
             'whale_alert': None,
-            'largest_tx': None
+            'largest_tx': None,
+            'buy_pressure': 0,
+            'sell_pressure': 0
         }
 
     total_btc = sum(t['btc'] for t in transactions)
-    total_usd = sum(t['usd'] for t in transactions)
+    total_usd = sum(t.get('usd', 0) for t in transactions)
 
-    inflows = sum(t['btc'] for t in transactions if t['type'] == 'EXCHANGE_INFLOW')
-    outflows = sum(t['btc'] for t in transactions if t['type'] == 'EXCHANGE_OUTFLOW')
-    transfers = sum(t['btc'] for t in transactions if t['type'] in ['WHALE_TRANSFER', 'LARGE_TRANSFER'])
+    # Categorize by new transaction types
+    large_buys = sum(t['btc'] for t in transactions if t['type'] == 'LARGE_BUY')
+    large_sells = sum(t['btc'] for t in transactions if t['type'] == 'LARGE_SELL')
+    bid_walls = sum(t['btc'] for t in transactions if t['type'] == 'BID_WALL')
+    ask_walls = sum(t['btc'] for t in transactions if t['type'] == 'ASK_WALL')
+    on_chain = sum(t['btc'] for t in transactions if t['type'] == 'ON_CHAIN')
 
-    # Determine net flow direction
+    # Calculate buy vs sell pressure
+    buy_pressure = large_buys + bid_walls
+    sell_pressure = large_sells + ask_walls
+
+    # Determine net flow direction based on order flow
     net_flow = 'NEUTRAL'
-    if inflows > outflows * 1.5:
-        net_flow = 'BEARISH'  # More coins flowing to exchanges (potential selling)
-    elif outflows > inflows * 1.5:
-        net_flow = 'BULLISH'  # More coins leaving exchanges (accumulation)
+    if buy_pressure > sell_pressure * 1.3:
+        net_flow = 'BULLISH'  # More buying pressure
+    elif sell_pressure > buy_pressure * 1.3:
+        net_flow = 'BEARISH'  # More selling pressure
 
     # Get largest transaction for alert
     largest = max(transactions, key=lambda x: x['btc']) if transactions else None
 
     # Generate whale alert message
     whale_alert = None
-    if largest and largest['btc'] >= 100:
-        whale_alert = f"🐋 {largest['btc']:.0f} BTC (${largest['usd']:,.0f}) {largest['type'].replace('_', ' ').title()}"
+    if largest and largest['btc'] >= 50:
+        whale_alert = f"🐋 {largest['btc']:.0f} BTC (${largest.get('usd', 0):,.0f}) {largest['type'].replace('_', ' ').title()}"
 
     return {
         'total_btc_moved': round(total_btc, 2),
         'total_usd_moved': round(total_usd, 0),
-        'exchange_inflows': round(inflows, 2),
-        'exchange_outflows': round(outflows, 2),
-        'whale_transfers': round(transfers, 2),
+        'large_buys': round(large_buys, 2),
+        'large_sells': round(large_sells, 2),
+        'bid_walls': round(bid_walls, 2),
+        'ask_walls': round(ask_walls, 2),
+        'on_chain': round(on_chain, 2),
+        'buy_pressure': round(buy_pressure, 2),
+        'sell_pressure': round(sell_pressure, 2),
         'net_flow': net_flow,
         'whale_alert': whale_alert,
         'largest_tx': largest,
