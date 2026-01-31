@@ -10472,7 +10472,7 @@ class LiveDataHandler(BaseHTTPRequestHandler):
                     return
                 bars = fetch_historical_bars_for_trade(contract, entry_date, entry_time, API_KEY)
                 if not bars:
-                    self.wfile.write(json.dumps({'error': 'No bar data', 'entry_date': entry_date}).encode())
+                    self.wfile.write(json.dumps({"error": "No bar data", "entry_date": entry_date, "api_key_present": bool(API_KEY), "entry_time": entry_time, "contract": contract}).encode())
                     return
                 metrics = process_bars_for_trade_metrics(bars, entry_price, direction, stop_price, targets)
                 self.wfile.write(json.dumps(metrics).encode())
