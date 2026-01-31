@@ -212,7 +212,13 @@ def fetch_historical_bars_for_trade(contract, entry_date, entry_time, api_key=No
     crypto_symbols = ['BTCUSD', 'BTCUSDT', 'ETHUSD', 'ETHUSDT', 'BTC', 'ETH']
     if contract.upper() in crypto_symbols or contract.upper().startswith('BTC') or contract.upper().startswith('ETH'):
         print(f"🪙 Routing {contract} to Binance API")
-        return fetch_binance_klines(contract, entry_date, entry_time)
+        try:
+            result = fetch_binance_klines(contract, entry_date, entry_time)
+            if not result:
+                return {"debug": "binance_returned_none", "contract": contract}
+            return result
+        except Exception as be:
+            return {"debug": "binance_exception", "error": str(be)}
     
     try:
         import databento as db
