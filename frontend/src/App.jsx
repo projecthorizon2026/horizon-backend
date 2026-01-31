@@ -23812,18 +23812,11 @@ const ClawdAnalytics = ({ selectedContract }) => {
   const [dateFilter, setDateFilter] = useState('all'); // all, today, 7d, 30d, custom
   const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
   const [tradeViewFilter, setTradeViewFilter] = useState('all'); // all, zone_aligned, mid_session
-  const [hoveredTrade, setHoveredTrade] = useState(null);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [tradesPage, setTradesPage] = useState(0); // Pagination for trades
+  const TRADES_PER_PAGE = 20;
   const { isMobile } = useResponsive();
 
-  // Track mouse position for floating tooltip
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      setMousePos({ x: e.clientX, y: e.clientY });
-    };
-    window.addEventListener('mousemove', handleMouseMove);
-    return () => window.removeEventListener('mousemove', handleMouseMove);
-  }, []);
+  // Mouse tracking removed - tooltip disabled for performance
 
   useEffect(() => {
     const fetchAnalytics = async () => {
@@ -24080,7 +24073,59 @@ const ClawdAnalytics = ({ selectedContract }) => {
             )}
           </div>
 
-          {/* Zone Alignment Stats */}
+          {/* Zone Alignment Stats - Filtered by Date */}
+          {(() => {
+            // Filter trades by date first
+            const filterByDate = (trades) => {
+              if (!trades || dateFilter === 'all') return trades || [];
+              const now = new Date();
+              return trades.filter(trade => {
+                if (!trade.timestamp) return true;
+                const tradeDate = new Date(trade.timestamp * 1000);
+                if (dateFilter === 'today') {
+                  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                  return tradeDate >= today;
+                } else if (dateFilter === '7d') {
+                  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                  return tradeDate >= weekAgo;
+                } else if (dateFilter === '30d') {
+                  const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                  return tradeDate >= monthAgo;
+                } else if (dateFilter === 'custom') {
+                  if (customDateRange.start && tradeDate < new Date(customDateRange.start)) return false;
+                  if (customDateRange.end) {
+                    const endDate = new Date(customDateRange.end);
+                    endDate.setHours(23, 59, 59, 999);
+                    if (tradeDate > endDate) return false;
+                  }
+                }
+                return true;
+              });
+            };
+
+            const filteredTrades = filterByDate(comparison.trades);
+            const zoneAligned = filteredTrades.filter(t => t.zone_aligned);
+            const midSession = filteredTrades.filter(t => !t.zone_aligned);
+
+            const zoneWins = zoneAligned.filter(t => t.result === 'WIN').length;
+            const midWins = midSession.filter(t => t.result === 'WIN').length;
+            const zoneWinRate = zoneAligned.length > 0 ? Math.round(zoneWins / zoneAligned.length * 100) : 0;
+            const midWinRate = midSession.length > 0 ? Math.round(midWins / midSession.length * 100) : 0;
+            const advantage = zoneWinRate - midWinRate;
+
+            // Calculate avg Entry, SL, TP for comparison
+            const avgZoneEntry = zoneAligned.length > 0 ? zoneAligned.reduce((sum, t) => sum + (t.entry_price || 0), 0) / zoneAligned.length : 0;
+            const avgZoneSL = zoneAligned.length > 0 ? zoneAligned.reduce((sum, t) => sum + Math.abs((t.entry_price || 0) - (t.stop || 0)), 0) / zoneAligned.length : 0;
+            const avgZoneTP = zoneAligned.length > 0 ? zoneAligned.reduce((sum, t) => sum + Math.abs((t.targets?.[0] || t.entry_price) - (t.entry_price || 0)), 0) / zoneAligned.length : 0;
+            const avgZoneRR = avgZoneSL > 0 ? avgZoneTP / avgZoneSL : 0;
+
+            const avgMidEntry = midSession.length > 0 ? midSession.reduce((sum, t) => sum + (t.entry_price || 0), 0) / midSession.length : 0;
+            const avgMidSL = midSession.length > 0 ? midSession.reduce((sum, t) => sum + Math.abs((t.entry_price || 0) - (t.stop || 0)), 0) / midSession.length : 0;
+            const avgMidTP = midSession.length > 0 ? midSession.reduce((sum, t) => sum + Math.abs((t.targets?.[0] || t.entry_price) - (t.entry_price || 0)), 0) / midSession.length : 0;
+            const avgMidRR = avgMidSL > 0 ? avgMidTP / avgMidSL : 0;
+
+            return (
+              <>
           <div style={{
             display: 'grid',
             gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
@@ -24098,18 +24143,33 @@ const ClawdAnalytics = ({ selectedContract }) => {
                 <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#00ff88' }} />
                 <span style={{ fontSize: 16, fontWeight: 700, color: '#00ff88' }}>Zone-Aligned Entries</span>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 16 }}>
                 <div>
                   <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>TRADES</div>
-                  <div style={{ fontSize: 28, fontWeight: 700, color: '#fff' }}>{comparison.summary?.zone_aligned_trades || 0}</div>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: '#fff' }}>{zoneAligned.length}</div>
                 </div>
                 <div>
                   <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>WIN RATE</div>
-                  <div style={{ fontSize: 28, fontWeight: 700, color: '#00ff88' }}>{comparison.summary?.zone_aligned_win_rate || 0}%</div>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: '#00ff88' }}>{zoneWinRate}%</div>
                 </div>
               </div>
-              <div style={{ marginTop: 16, padding: 12, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
-                <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>Entries within 20pts of zone boundary</div>
+              {/* Entry/SL/TP Stats */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12 }}>
+                <div style={{ padding: 8, background: 'rgba(0,0,0,0.3)', borderRadius: 6, textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#888' }}>AVG SL</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#ff4466' }}>{avgZoneSL.toFixed(1)}pts</div>
+                </div>
+                <div style={{ padding: 8, background: 'rgba(0,0,0,0.3)', borderRadius: 6, textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#888' }}>AVG TP</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#00ff88' }}>{avgZoneTP.toFixed(1)}pts</div>
+                </div>
+                <div style={{ padding: 8, background: 'rgba(0,0,0,0.3)', borderRadius: 6, textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#888' }}>AVG R:R</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#00aaff' }}>{avgZoneRR.toFixed(1)}:1</div>
+                </div>
+              </div>
+              <div style={{ padding: 12, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
+                <div style={{ fontSize: 11, color: '#666' }}>Entries within 20pts of zone boundary</div>
               </div>
             </div>
 
@@ -24122,45 +24182,65 @@ const ClawdAnalytics = ({ selectedContract }) => {
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
                 <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#ffaa00' }} />
-                <span style={{ fontSize: 16, fontWeight: 700, color: '#ffaa00' }}>Mid-Session Entries</span>
+                <span style={{ fontSize: 16, fontWeight: 700, color: '#ffaa00' }}>Mid-Session Entries (Clawd)</span>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 16 }}>
                 <div>
                   <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>TRADES</div>
-                  <div style={{ fontSize: 28, fontWeight: 700, color: '#fff' }}>{comparison.summary?.zone_misaligned_trades || 0}</div>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: '#fff' }}>{midSession.length}</div>
                 </div>
                 <div>
                   <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>WIN RATE</div>
-                  <div style={{ fontSize: 28, fontWeight: 700, color: '#ffaa00' }}>{comparison.summary?.zone_misaligned_win_rate || 0}%</div>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: '#ffaa00' }}>{midWinRate}%</div>
                 </div>
               </div>
-              <div style={{ marginTop: 16, padding: 12, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
-                <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>Entries not aligned with zone boundaries</div>
+              {/* Entry/SL/TP Stats */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12 }}>
+                <div style={{ padding: 8, background: 'rgba(0,0,0,0.3)', borderRadius: 6, textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#888' }}>AVG SL</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#ff4466' }}>{avgMidSL.toFixed(1)}pts</div>
+                </div>
+                <div style={{ padding: 8, background: 'rgba(0,0,0,0.3)', borderRadius: 6, textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#888' }}>AVG TP</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#00ff88' }}>{avgMidTP.toFixed(1)}pts</div>
+                </div>
+                <div style={{ padding: 8, background: 'rgba(0,0,0,0.3)', borderRadius: 6, textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#888' }}>AVG R:R</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#00aaff' }}>{avgMidRR.toFixed(1)}:1</div>
+                </div>
+              </div>
+              <div style={{ padding: 12, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
+                <div style={{ fontSize: 11, color: '#666' }}>{midSession.length === 0 ? 'No Clawd Bot signals in selected period' : 'Entries not aligned with zone boundaries'}</div>
               </div>
             </div>
           </div>
 
           {/* Win Rate Advantage */}
-          {comparison.summary && (
+          {filteredTrades.length > 0 && (
             <div style={{
               padding: 20,
-              background: comparison.summary.win_rate_advantage > 0 ? 'rgba(0,255,136,0.08)' : 'rgba(255,68,102,0.08)',
-              border: `2px solid ${comparison.summary.win_rate_advantage > 0 ? 'rgba(0,255,136,0.3)' : 'rgba(255,68,102,0.3)'}`,
+              background: advantage > 0 ? 'rgba(0,255,136,0.08)' : advantage < 0 ? 'rgba(255,68,102,0.08)' : 'rgba(255,255,255,0.05)',
+              border: `2px solid ${advantage > 0 ? 'rgba(0,255,136,0.3)' : advantage < 0 ? 'rgba(255,68,102,0.3)' : 'rgba(255,255,255,0.2)'}`,
               borderRadius: 12,
               textAlign: 'center',
               marginBottom: 24
             }}>
               <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>ZONE ALIGNMENT ADVANTAGE</div>
-              <div style={{ fontSize: 40, fontWeight: 700, color: comparison.summary.win_rate_advantage > 0 ? '#00ff88' : '#ff4466' }}>
-                {comparison.summary.win_rate_advantage > 0 ? '+' : ''}{comparison.summary.win_rate_advantage}%
+              <div style={{ fontSize: 40, fontWeight: 700, color: advantage > 0 ? '#00ff88' : advantage < 0 ? '#ff4466' : '#888' }}>
+                {advantage > 0 ? '+' : ''}{advantage}%
               </div>
               <div style={{ fontSize: 13, color: '#888', marginTop: 8 }}>
-                {comparison.summary.win_rate_advantage > 0
-                  ? 'Zone-aligned entries outperform mid-session entries'
-                  : 'Mid-session entries currently performing better'}
+                {midSession.length === 0
+                  ? 'Add Clawd Bot signals to compare strategies'
+                  : advantage > 0
+                    ? 'Zone-aligned entries outperform mid-session entries'
+                    : 'Mid-session entries currently performing better'}
               </div>
             </div>
           )}
+              </>
+            );
+          })()}
 
           {/* Entry Accuracy Breakdown */}
           {comparison.entry_accuracy && (
@@ -24303,53 +24383,78 @@ const ClawdAnalytics = ({ selectedContract }) => {
                 </div>
               </div>
 
-              {/* Trades List */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 400, overflowY: 'auto' }}>
-                {comparison.trades
-                  .filter(trade => {
-                    // Apply trade type filter
-                    if (tradeViewFilter === 'zone_aligned' && !trade.zone_aligned) return false;
-                    if (tradeViewFilter === 'mid_session' && trade.zone_aligned) return false;
-                    // Apply date filter
-                    if (dateFilter !== 'all' && trade.timestamp) {
-                      const tradeDate = new Date(trade.timestamp);
-                      const now = new Date();
-                      if (dateFilter === 'today') {
-                        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                        if (tradeDate < today) return false;
-                      } else if (dateFilter === '7d') {
-                        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                        if (tradeDate < weekAgo) return false;
-                      } else if (dateFilter === '30d') {
-                        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-                        if (tradeDate < monthAgo) return false;
-                      } else if (dateFilter === 'custom') {
-                        if (customDateRange.start) {
-                          const startDate = new Date(customDateRange.start);
-                          if (tradeDate < startDate) return false;
-                        }
-                        if (customDateRange.end) {
-                          const endDate = new Date(customDateRange.end);
-                          endDate.setHours(23, 59, 59, 999);
-                          if (tradeDate > endDate) return false;
-                        }
+              {/* Trades List with Pagination */}
+              {(() => {
+                const filteredTrades = comparison.trades.filter(trade => {
+                  if (tradeViewFilter === 'zone_aligned' && !trade.zone_aligned) return false;
+                  if (tradeViewFilter === 'mid_session' && trade.zone_aligned) return false;
+                  if (dateFilter !== 'all' && trade.timestamp) {
+                    const tradeDate = new Date(trade.timestamp * 1000);
+                    const now = new Date();
+                    if (dateFilter === 'today') {
+                      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                      if (tradeDate < today) return false;
+                    } else if (dateFilter === '7d') {
+                      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                      if (tradeDate < weekAgo) return false;
+                    } else if (dateFilter === '30d') {
+                      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                      if (tradeDate < monthAgo) return false;
+                    } else if (dateFilter === 'custom') {
+                      if (customDateRange.start && tradeDate < new Date(customDateRange.start)) return false;
+                      if (customDateRange.end) {
+                        const endDate = new Date(customDateRange.end);
+                        endDate.setHours(23, 59, 59, 999);
+                        if (tradeDate > endDate) return false;
                       }
                     }
-                    return true;
-                  })
-                  .map((trade, idx) => (
-                    <div
-                      key={idx}
-                      style={{
-                        padding: 16,
-                        background: trade.zone_aligned ? 'rgba(0,255,136,0.05)' : 'rgba(255,170,0,0.05)',
-                        border: `1px solid ${trade.zone_aligned ? 'rgba(0,255,136,0.2)' : 'rgba(255,170,0,0.2)'}`,
-                        borderRadius: 12,
-                        position: 'relative',
-                        cursor: 'pointer',
-                      }}
-                      onMouseEnter={() => setHoveredTrade(idx)}
-                      onMouseLeave={() => setHoveredTrade(null)}
+                  }
+                  return true;
+                });
+                const totalPages = Math.ceil(filteredTrades.length / TRADES_PER_PAGE);
+                const paginatedTrades = filteredTrades.slice(tradesPage * TRADES_PER_PAGE, (tradesPage + 1) * TRADES_PER_PAGE);
+
+                return (
+                  <>
+                    {/* Pagination Controls */}
+                    {totalPages > 1 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, padding: '8px 0' }}>
+                        <span style={{ fontSize: 12, color: '#888' }}>
+                          Showing {tradesPage * TRADES_PER_PAGE + 1}-{Math.min((tradesPage + 1) * TRADES_PER_PAGE, filteredTrades.length)} of {filteredTrades.length}
+                        </span>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button
+                            onClick={() => setTradesPage(Math.max(0, tradesPage - 1))}
+                            disabled={tradesPage === 0}
+                            style={{
+                              padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)',
+                              background: tradesPage === 0 ? 'transparent' : 'rgba(147,112,219,0.2)',
+                              color: tradesPage === 0 ? '#666' : '#9370DB', fontSize: 12, cursor: tradesPage === 0 ? 'not-allowed' : 'pointer'
+                            }}
+                          >← Prev</button>
+                          <span style={{ fontSize: 12, color: '#888', alignSelf: 'center' }}>Page {tradesPage + 1} of {totalPages}</span>
+                          <button
+                            onClick={() => setTradesPage(Math.min(totalPages - 1, tradesPage + 1))}
+                            disabled={tradesPage >= totalPages - 1}
+                            style={{
+                              padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(255,255,255,0.1)',
+                              background: tradesPage >= totalPages - 1 ? 'transparent' : 'rgba(147,112,219,0.2)',
+                              color: tradesPage >= totalPages - 1 ? '#666' : '#9370DB', fontSize: 12, cursor: tradesPage >= totalPages - 1 ? 'not-allowed' : 'pointer'
+                            }}
+                          >Next →</button>
+                        </div>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {paginatedTrades.map((trade, idx) => (
+                        <div
+                          key={`${tradesPage}-${idx}`}
+                          style={{
+                            padding: 16,
+                            background: trade.zone_aligned ? 'rgba(0,255,136,0.05)' : 'rgba(255,170,0,0.05)',
+                            border: `1px solid ${trade.zone_aligned ? 'rgba(0,255,136,0.2)' : 'rgba(255,170,0,0.2)'}`,
+                            borderRadius: 12,
+                          }}
                     >
                       {/* Trade Header */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -24369,10 +24474,19 @@ const ClawdAnalytics = ({ selectedContract }) => {
                             fontSize: 10,
                             padding: '2px 6px',
                             borderRadius: 4,
-                            background: trade.zone_aligned ? 'rgba(0,255,136,0.2)' : 'rgba(255,170,0,0.2)',
+                            background: trade.source === 'ZONE' ? 'rgba(0,255,136,0.2)' : 'rgba(147,112,219,0.2)',
+                            color: trade.source === 'ZONE' ? '#00ff88' : '#9370DB'
+                          }}>
+                            {trade.source === 'ZONE' ? '🎯 Zone Idea' : '🤖 Clawd Bot'}
+                          </span>
+                          <span style={{
+                            fontSize: 10,
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            background: trade.zone_aligned ? 'rgba(0,255,136,0.15)' : 'rgba(255,170,0,0.15)',
                             color: trade.zone_aligned ? '#00ff88' : '#ffaa00'
                           }}>
-                            {trade.zone_aligned ? '🎯 Zone-Aligned' : '⚡ Mid-Session'}
+                            {trade.zone_aligned ? '✓ Zone-Aligned' : '○ Mid-Session'}
                           </span>
                         </div>
                         <div style={{
@@ -24387,29 +24501,40 @@ const ClawdAnalytics = ({ selectedContract }) => {
                         </div>
                       </div>
 
-                      {/* Entry/SL/TP Row */}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 8 }}>
+                      {/* Entry/SL/TP Row with Points */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: 8 }}>
                         <div style={{ textAlign: 'center', padding: 8, background: 'rgba(0,170,255,0.1)', borderRadius: 6 }}>
-                          <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>ENTRY</div>
-                          <div style={{ fontSize: 14, fontWeight: 600, color: '#00aaff' }}>${trade.entry_price?.toFixed(2)}</div>
+                          <div style={{ fontSize: 9, color: '#888', marginBottom: 2 }}>ENTRY IDEA</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#00aaff' }}>${trade.entry_price?.toFixed(2)}</div>
                         </div>
                         <div style={{ textAlign: 'center', padding: 8, background: 'rgba(255,68,102,0.1)', borderRadius: 6 }}>
-                          <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>STOP LOSS</div>
-                          <div style={{ fontSize: 14, fontWeight: 600, color: '#ff4466' }}>${trade.stop?.toFixed(2)}</div>
+                          <div style={{ fontSize: 9, color: '#888', marginBottom: 2 }}>STOP LOSS</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#ff4466' }}>${trade.stop?.toFixed(2)}</div>
+                          <div style={{ fontSize: 9, color: '#ff6666' }}>-{trade.trade_framework?.risk_pts?.toFixed(0) || Math.abs(trade.entry_price - trade.stop).toFixed(0)}pts</div>
                         </div>
                         <div style={{ textAlign: 'center', padding: 8, background: 'rgba(0,255,136,0.1)', borderRadius: 6 }}>
-                          <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>T1</div>
-                          <div style={{ fontSize: 14, fontWeight: 600, color: trade.t1_hit ? '#00ff88' : '#666' }}>
+                          <div style={{ fontSize: 9, color: '#888', marginBottom: 2 }}>T1 IDEA</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: trade.t1_hit ? '#00ff88' : '#666' }}>
                             ${trade.targets?.[0]?.toFixed(2) || '-'}
-                            {trade.t1_hit && <span style={{ marginLeft: 4, fontSize: 10 }}>✓</span>}
+                            {trade.t1_hit && <span style={{ marginLeft: 2, fontSize: 9 }}>✓</span>}
                           </div>
+                          {trade.targets?.[0] && <div style={{ fontSize: 9, color: '#00cc88' }}>+{Math.abs(trade.targets[0] - trade.entry_price).toFixed(0)}pts</div>}
                         </div>
                         <div style={{ textAlign: 'center', padding: 8, background: 'rgba(0,255,136,0.08)', borderRadius: 6 }}>
-                          <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>T2</div>
-                          <div style={{ fontSize: 14, fontWeight: 600, color: trade.t2_hit ? '#00ff88' : '#666' }}>
+                          <div style={{ fontSize: 9, color: '#888', marginBottom: 2 }}>T2 IDEA</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: trade.t2_hit ? '#00ff88' : '#666' }}>
                             ${trade.targets?.[1]?.toFixed(2) || '-'}
-                            {trade.t2_hit && <span style={{ marginLeft: 4, fontSize: 10 }}>✓</span>}
+                            {trade.t2_hit && <span style={{ marginLeft: 2, fontSize: 9 }}>✓</span>}
                           </div>
+                          {trade.targets?.[1] && <div style={{ fontSize: 9, color: '#00cc88' }}>+{Math.abs(trade.targets[1] - trade.entry_price).toFixed(0)}pts</div>}
+                        </div>
+                        <div style={{ textAlign: 'center', padding: 8, background: 'rgba(0,255,136,0.05)', borderRadius: 6 }}>
+                          <div style={{ fontSize: 9, color: '#888', marginBottom: 2 }}>T3 IDEA</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: trade.t3_hit ? '#00ff88' : '#666' }}>
+                            ${trade.targets?.[2]?.toFixed(2) || '-'}
+                            {trade.t3_hit && <span style={{ marginLeft: 2, fontSize: 9 }}>✓</span>}
+                          </div>
+                          {trade.targets?.[2] && <div style={{ fontSize: 9, color: '#00cc88' }}>+{Math.abs(trade.targets[2] - trade.entry_price).toFixed(0)}pts</div>}
                         </div>
                       </div>
 
@@ -24426,143 +24551,9 @@ const ClawdAnalytics = ({ selectedContract }) => {
                   ))}
               </div>
 
-              {/* Floating Cursor Tooltip */}
-              {hoveredTrade !== null && comparison.trades[hoveredTrade] && ReactDOM.createPortal(
-                <div style={{
-                  position: 'fixed',
-                  left: mousePos.x + 20,
-                  top: mousePos.y - 100,
-                  zIndex: 99999,
-                  padding: 20,
-                  background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-                  border: '2px solid rgba(147,112,219,0.5)',
-                  borderRadius: 16,
-                  boxShadow: '0 12px 48px rgba(0,0,0,0.8), 0 0 20px rgba(147,112,219,0.2)',
-                  minWidth: 340,
-                  maxWidth: 400,
-                  pointerEvents: 'none',
-                }}>
-                  {(() => {
-                    const trade = comparison.trades[hoveredTrade];
-                    const entryBasis = trade.zone_aligned
-                      ? `Entry at ${trade.closest_zone} zone (${trade.entry_distance_from_zone}pts from level)`
-                      : `Mid-session entry based on momentum/structure`;
-                    const stopBasis = trade.direction === 'LONG'
-                      ? `Stop below ${trade.closest_zone || 'session support'} (-${Math.abs(trade.entry_price - trade.stop).toFixed(1)}pts risk)`
-                      : `Stop above ${trade.closest_zone || 'session resistance'} (-${Math.abs(trade.entry_price - trade.stop).toFixed(1)}pts risk)`;
-                    const t1Basis = `T1: 1R target (+${Math.abs(trade.targets?.[0] - trade.entry_price).toFixed(1)}pts)`;
-                    const t2Basis = trade.targets?.[1] ? `T2: 2R extension (+${Math.abs(trade.targets?.[1] - trade.entry_price).toFixed(1)}pts)` : null;
-                    const t3Basis = trade.targets?.[2] ? `T3: Runner target (+${Math.abs(trade.targets?.[2] - trade.entry_price).toFixed(1)}pts)` : null;
-
-                    return (
-                      <>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                          <span style={{ fontSize: 18 }}>📋</span>
-                          <span style={{ fontSize: 15, fontWeight: 700, color: '#9370DB' }}>Trade Strategy Details</span>
-                          <span style={{
-                            marginLeft: 'auto',
-                            padding: '3px 10px',
-                            borderRadius: 6,
-                            background: trade.result === 'WIN' ? 'rgba(0,255,136,0.2)' : 'rgba(255,68,102,0.2)',
-                            color: trade.result === 'WIN' ? '#00ff88' : '#ff4466',
-                            fontWeight: 700,
-                            fontSize: 12
-                          }}>
-                            {trade.result}
-                          </span>
-                        </div>
-
-                        {/* Entry Section */}
-                        <div style={{ marginBottom: 14, padding: 12, background: 'rgba(0,170,255,0.1)', borderRadius: 10, border: '1px solid rgba(0,170,255,0.2)' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                            <span style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>ENTRY IDEA</span>
-                            <span style={{ fontSize: 16, fontWeight: 700, color: '#00aaff' }}>${trade.entry_price?.toFixed(2)}</span>
-                          </div>
-                          <div style={{ fontSize: 11, color: '#aaa', lineHeight: 1.4 }}>
-                            📍 {entryBasis}
-                          </div>
-                        </div>
-
-                        {/* Stop Loss Section */}
-                        <div style={{ marginBottom: 14, padding: 12, background: 'rgba(255,68,102,0.1)', borderRadius: 10, border: '1px solid rgba(255,68,102,0.2)' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                            <span style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>STOP LOSS</span>
-                            <span style={{ fontSize: 16, fontWeight: 700, color: '#ff4466' }}>${trade.stop?.toFixed(2)}</span>
-                          </div>
-                          <div style={{ fontSize: 11, color: '#aaa', lineHeight: 1.4 }}>
-                            🛡️ {stopBasis}
-                          </div>
-                        </div>
-
-                        {/* Targets Section */}
-                        <div style={{ marginBottom: 14, padding: 12, background: 'rgba(0,255,136,0.08)', borderRadius: 10, border: '1px solid rgba(0,255,136,0.2)' }}>
-                          <div style={{ fontSize: 11, color: '#888', fontWeight: 600, marginBottom: 10 }}>TARGET LEVELS</div>
-                          <div style={{ display: 'grid', gap: 8 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ fontSize: 12, color: trade.t1_hit ? '#00ff88' : '#888' }}>
-                                🎯 {t1Basis}
-                              </span>
-                              <span style={{ fontSize: 14, fontWeight: 600, color: trade.t1_hit ? '#00ff88' : '#666' }}>
-                                ${trade.targets?.[0]?.toFixed(2)} {trade.t1_hit && '✅'}
-                              </span>
-                            </div>
-                            {t2Basis && (
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ fontSize: 12, color: trade.t2_hit ? '#00ff88' : '#888' }}>
-                                  🎯 {t2Basis}
-                                </span>
-                                <span style={{ fontSize: 14, fontWeight: 600, color: trade.t2_hit ? '#00ff88' : '#666' }}>
-                                  ${trade.targets?.[1]?.toFixed(2)} {trade.t2_hit && '✅'}
-                                </span>
-                              </div>
-                            )}
-                            {t3Basis && (
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ fontSize: 12, color: trade.t3_hit ? '#00ff88' : '#888' }}>
-                                  🎯 {t3Basis}
-                                </span>
-                                <span style={{ fontSize: 14, fontWeight: 600, color: trade.t3_hit ? '#00ff88' : '#666' }}>
-                                  ${trade.targets?.[2]?.toFixed(2)} {trade.t3_hit && '✅'}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Performance Stats */}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-                          <div style={{ textAlign: 'center', padding: 8, background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
-                            <div style={{ fontSize: 10, color: '#666' }}>Session</div>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: '#00aaff' }}>{trade.session || 'N/A'}</div>
-                          </div>
-                          <div style={{ textAlign: 'center', padding: 8, background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
-                            <div style={{ fontSize: 10, color: '#666' }}>Confidence</div>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: trade.confidence === 'HIGH' ? '#00ff88' : '#ffaa00' }}>{trade.confidence}</div>
-                          </div>
-                          <div style={{ textAlign: 'center', padding: 8, background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
-                            <div style={{ fontSize: 10, color: '#666' }}>R:R Achieved</div>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>{trade.rr?.toFixed(1)}:1</div>
-                          </div>
-                        </div>
-
-                        {/* Zone vs Clawd Comparison */}
-                        <div style={{ marginTop: 14, padding: 10, background: 'rgba(147,112,219,0.1)', borderRadius: 8, border: '1px solid rgba(147,112,219,0.2)' }}>
-                          <div style={{ fontSize: 11, fontWeight: 600, color: '#9370DB', marginBottom: 6 }}>
-                            {trade.zone_aligned ? '🎯 ZONE PARTICIPATION' : '⚡ CLAWD BOT'} STRATEGY
-                          </div>
-                          <div style={{ fontSize: 11, color: '#aaa' }}>
-                            {trade.zone_aligned
-                              ? `Entry at key zone level (${trade.closest_zone}). Zone Participation method seeks entries at session/PD boundaries for optimal R:R.`
-                              : `Momentum-based entry from Clawd Bot signal. Entry based on price action and structure analysis.`
-                            }
-                          </div>
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>,
-                document.body
-              )}
+              </>
+            );
+          })()}
             </div>
           )}
 

@@ -163,131 +163,229 @@ stream_thread = None
 startup_complete = False  # Flag to prevent HTTP blocking during startup
 
 # ============================================
-# ZONE PARTICIPATION TRADE IDEAS RECORDING
+# UNIFIED TRADE IDEAS RECORDING SYSTEM
 # ============================================
-# Records zone suggestions for comparison with Clawd trades
-zone_ideas_file = os.path.join(os.path.dirname(__file__), 'zone_ideas.json')
-zone_ideas_lock = threading.Lock()
+# Records both Zone Participation and Clawd trade ideas in trades_data.json
+# Uses the existing persistent file for durability across deployments
+trades_data_file = os.path.join(os.path.dirname(__file__), 'trades_data.json')
+trade_ideas_lock = threading.Lock()
 
-def load_zone_ideas():
-    """Load recorded zone ideas from file."""
+def load_trades_data():
+    """Load all trades data from persistent file."""
     try:
-        if os.path.exists(zone_ideas_file):
-            with open(zone_ideas_file, 'r') as f:
+        if os.path.exists(trades_data_file):
+            with open(trades_data_file, 'r') as f:
                 return json.load(f)
     except Exception as e:
-        print(f"⚠️ Error loading zone ideas: {e}")
-    return {'GC': [], 'BTC-SPOT': [], 'NQ': [], 'ES': [], 'CL': []}
+        print(f"⚠️ Error loading trades data: {e}")
+    return []
 
-def save_zone_ideas(ideas):
-    """Save zone ideas to file."""
+def save_trades_data(data):
+    """Save trades data to persistent file."""
     try:
-        with open(zone_ideas_file, 'w') as f:
-            json.dump(ideas, f, indent=2)
+        with open(trades_data_file, 'w') as f:
+            json.dump(data, f, indent=2)
+        print(f"💾 Saved {len(data)} trades to trades_data.json")
     except Exception as e:
-        print(f"⚠️ Error saving zone ideas: {e}")
+        print(f"⚠️ Error saving trades data: {e}")
 
 def record_zone_idea(asset, zone_data, current_price):
-    """Record a zone participation trade idea."""
-    with zone_ideas_lock:
-        ideas = load_zone_ideas()
-        if asset not in ideas:
-            ideas[asset] = []
+    """Record a Zone Participation trade idea with full Entry/SL/TP details."""
+    with trade_ideas_lock:
+        trades = load_trades_data()
 
-        # Check if we already have this zone recorded recently (within 30 min)
         zone_name = zone_data.get('name', '')
         zone_price = zone_data.get('price', 0)
         now = time.time()
 
-        # Avoid duplicates
-        for existing in ideas[asset][-50:]:  # Check last 50
-            if (existing.get('zone_name') == zone_name and
-                abs(existing.get('zone_price', 0) - zone_price) < 1 and
-                now - existing.get('timestamp', 0) < 1800):  # 30 min
+        # Check for duplicates (same zone within 30 min)
+        for existing in trades[-100:]:
+            if (existing.get('source') == 'ZONE' and
+                existing.get('zone_name') == zone_name and
+                existing.get('contract', '').startswith(asset[:2]) and
+                abs(existing.get('zone_price', 0) - zone_price) < 5 and
+                now - existing.get('timestamp_unix', 0) < 1800):
                 return None  # Already recorded
 
-        trade = zone_data.get('trade', {})
+        trade_framework = zone_data.get('trade', {})
+        targets = trade_framework.get('targets', [])
+
+        # Extract target prices (could be dicts or floats)
+        t1 = targets[0].get('price', targets[0]) if len(targets) > 0 and isinstance(targets[0], dict) else (targets[0] if len(targets) > 0 else None)
+        t2 = targets[1].get('price', targets[1]) if len(targets) > 1 and isinstance(targets[1], dict) else (targets[1] if len(targets) > 1 else None)
+        t3 = targets[2].get('price', targets[2]) if len(targets) > 2 and isinstance(targets[2], dict) else (targets[2] if len(targets) > 2 else None)
+
+        entry_price = trade_framework.get('entry', zone_price)
+        stop_price = trade_framework.get('stop', 0)
+        direction = zone_data.get('direction', 'LONG').upper()
+
+        # Calculate distances
+        risk_pts = abs(entry_price - stop_price) if stop_price else 0
+        t1_pts = abs(t1 - entry_price) if t1 else 0
+        t2_pts = abs(t2 - entry_price) if t2 else 0
+        t3_pts = abs(t3 - entry_price) if t3 else 0
+        rr = t1_pts / risk_pts if risk_pts > 0 else 0
+
         idea = {
-            'id': f"{asset}_{int(now*1000)}",
-            'timestamp': now,
-            'datetime': datetime.now().isoformat(),
+            'timestamp': datetime.now().isoformat(),
+            'timestamp_unix': now,
+            'source': 'ZONE',  # ZONE or CLAWD
+            'contract': f"{asset}",
             'asset': asset,
             'zone_name': zone_name,
             'zone_type': zone_data.get('type', ''),
             'zone_price': zone_price,
-            'direction': zone_data.get('direction', 'LONG'),
-            'current_price_at_signal': current_price,
-            'distance_pts': zone_data.get('distance', 0),
-            'entry': trade.get('entry', zone_price),
-            'stop': trade.get('stop', 0),
-            'targets': trade.get('targets', []),
-            'rr_ratio': trade.get('rr', 0),
+            'direction': direction,
+            'bias': 'BULLISH' if direction == 'LONG' else 'BEARISH',
+            'confidence': 'HIGH' if zone_data.get('priority', 99) <= 2 else 'MEDIUM',
+            'price_at_signal': current_price,
+            'distance_from_zone': abs(zone_data.get('distance', 0)),
+            'entry_trigger': trade_framework.get('entry_trigger', f"Test {zone_name} + Absorption + Delta flip"),
+
+            # Trade Framework - Entry/SL/TP
+            'bullish' if direction == 'LONG' else 'bearish': {
+                'entry': entry_price,
+                'stop': stop_price,
+                'targets': [t for t in [t1, t2, t3] if t],
+                'risk_pts': risk_pts,
+                't1_pts': t1_pts,
+                't2_pts': t2_pts,
+                't3_pts': t3_pts,
+                'rr': round(rr, 2),
+            },
+
+            # Status tracking
+            'status': 'WATCHING',  # WATCHING, TRIGGERED, WIN, LOSS, EXPIRED
             'priority': zone_data.get('priority', 99),
-            'status': 'PENDING',  # PENDING, TRIGGERED, WIN, LOSS, EXPIRED
-            'triggered_at': None,
-            'exit_price': None,
-            'pnl_pts': None,
-            'notes': zone_data.get('notes', '')
+            'readiness': zone_data.get('readiness', {}),
+
+            # Outcome (filled later)
+            'outcome': None
         }
 
-        ideas[asset].append(idea)
+        trades.append(idea)
 
-        # Keep only last 500 ideas per asset
-        if len(ideas[asset]) > 500:
-            ideas[asset] = ideas[asset][-500:]
+        # Keep file manageable (last 1000 trades)
+        if len(trades) > 1000:
+            trades = trades[-1000:]
 
-        save_zone_ideas(ideas)
-        print(f"📝 Zone idea recorded: {asset} {zone_name} @ {zone_price}")
+        save_trades_data(trades)
+        print(f"📝 ZONE idea recorded: {asset} {direction} @ {zone_name} ({zone_price}) - Entry: {entry_price}, SL: {stop_price}, T1: {t1}")
         return idea
 
-def update_zone_idea_status(idea_id, status, exit_price=None, triggered_at=None):
-    """Update the status of a zone idea (TRIGGERED, WIN, LOSS, EXPIRED)."""
-    with zone_ideas_lock:
-        ideas = load_zone_ideas()
-        for asset in ideas:
-            for idea in ideas[asset]:
-                if idea.get('id') == idea_id:
-                    idea['status'] = status
-                    if exit_price:
-                        idea['exit_price'] = exit_price
-                        entry = idea.get('entry', idea.get('zone_price', 0))
-                        if idea.get('direction') == 'LONG':
-                            idea['pnl_pts'] = exit_price - entry
-                        else:
-                            idea['pnl_pts'] = entry - exit_price
-                    if triggered_at:
-                        idea['triggered_at'] = triggered_at
-                    save_zone_ideas(ideas)
-                    return True
+def record_clawd_signal(contract, signal_data):
+    """Record a Clawd Bot trade signal with full Entry/SL/TP details."""
+    with trade_ideas_lock:
+        trades = load_trades_data()
+        now = time.time()
+
+        # Check for duplicates (same signal within 5 min)
+        for existing in trades[-50:]:
+            if (existing.get('source') == 'CLAWD' and
+                existing.get('contract') == contract and
+                now - existing.get('timestamp_unix', 0) < 300):
+                return None  # Already recorded
+
+        # Parse signal data
+        bias = signal_data.get('bias', 'NEUTRAL').upper()
+        direction = 'LONG' if 'BULL' in bias else 'SHORT'
+
+        bullish = signal_data.get('bullish', {})
+        bearish = signal_data.get('bearish', {})
+        primary = bullish if direction == 'LONG' else bearish
+
+        entry = primary.get('entry', 0)
+        stop = primary.get('stop', 0)
+        targets = primary.get('targets', [])
+
+        risk_pts = abs(entry - stop) if stop else 0
+        t1_pts = abs(targets[0] - entry) if len(targets) > 0 else 0
+        rr = t1_pts / risk_pts if risk_pts > 0 else 0
+
+        # Determine asset from contract
+        asset = 'BTC-SPOT' if 'BTC' in contract.upper() else 'GC' if 'GC' in contract.upper() else contract
+
+        idea = {
+            'timestamp': datetime.now().isoformat(),
+            'timestamp_unix': now,
+            'source': 'CLAWD',
+            'contract': contract,
+            'asset': asset,
+            'raw_message': signal_data.get('raw_message', ''),
+            'direction': direction,
+            'bias': bias,
+            'confidence': signal_data.get('confidence', 'MEDIUM'),
+            'price_at_signal': signal_data.get('price_at_signal', 0),
+            'session': signal_data.get('session', 'Unknown'),
+            'signal_time': signal_data.get('signal_time', ''),
+
+            # Trade Framework
+            'bullish': bullish,
+            'bearish': bearish,
+
+            # Status
+            'status': 'PENDING',
+
+            # Outcome (filled later)
+            'outcome': signal_data.get('outcome', None)
+        }
+
+        trades.append(idea)
+
+        if len(trades) > 1000:
+            trades = trades[-1000:]
+
+        save_trades_data(trades)
+        print(f"📝 CLAWD signal recorded: {contract} {direction} - Entry: {entry}, SL: {stop}, Targets: {targets}")
+        return idea
+
+def update_trade_outcome(trade_id_or_timestamp, outcome_data):
+    """Update a trade's outcome (WIN/LOSS)."""
+    with trade_ideas_lock:
+        trades = load_trades_data()
+        for trade in trades:
+            if (trade.get('timestamp') == trade_id_or_timestamp or
+                trade.get('timestamp_unix') == trade_id_or_timestamp):
+                trade['outcome'] = outcome_data
+                trade['status'] = outcome_data.get('result', 'EVALUATED')
+                save_trades_data(trades)
+                return True
         return False
 
-# ============================================
-# DUAL-ASSET TRADE LOGGING SYSTEM
-# Records both Zone Participation and Clawd-style entries for BTC & Gold
-# ============================================
-dual_asset_trades_file = os.path.join(os.path.dirname(__file__), 'dual_asset_trades.json')
-dual_asset_lock = threading.Lock()
+def get_zone_ideas(asset=None, days=7):
+    """Get Zone ideas for comparison."""
+    trades = load_trades_data()
+    cutoff = time.time() - (days * 24 * 3600)
+
+    zone_trades = [t for t in trades
+                   if t.get('source') == 'ZONE'
+                   and t.get('timestamp_unix', 0) > cutoff
+                   and (asset is None or t.get('asset') == asset)]
+    return zone_trades
+
+def get_clawd_signals(asset=None, days=7):
+    """Get Clawd signals for comparison."""
+    trades = load_trades_data()
+    cutoff = time.time() - (days * 24 * 3600)
+
+    clawd_trades = [t for t in trades
+                    if t.get('source') == 'CLAWD'
+                    and t.get('timestamp_unix', 0) > cutoff
+                    and (asset is None or t.get('asset') == asset)]
+    return clawd_trades
+
+# Legacy compatibility - redirect to new system
+def load_zone_ideas():
+    return {'GC': get_zone_ideas('GC'), 'BTC-SPOT': get_zone_ideas('BTC-SPOT')}
 
 def load_dual_asset_trades():
-    """Load dual asset trade records."""
-    try:
-        if os.path.exists(dual_asset_trades_file):
-            with open(dual_asset_trades_file, 'r') as f:
-                return json.load(f)
-    except Exception as e:
-        print(f"⚠️ Error loading dual asset trades: {e}")
     return {
-        'GC': {'zone_ideas': [], 'clawd_ideas': []},
-        'BTC-SPOT': {'zone_ideas': [], 'clawd_ideas': []},
+        'GC': {'zone_ideas': get_zone_ideas('GC'), 'clawd_ideas': get_clawd_signals('GC')},
+        'BTC-SPOT': {'zone_ideas': get_zone_ideas('BTC-SPOT'), 'clawd_ideas': get_clawd_signals('BTC-SPOT')},
     }
 
 def save_dual_asset_trades(data):
-    """Save dual asset trade records."""
-    try:
-        with open(dual_asset_trades_file, 'w') as f:
-            json.dump(data, f, indent=2)
-    except Exception as e:
-        print(f"⚠️ Error saving dual asset trades: {e}")
+    pass  # Now handled by unified system
 
 def record_dual_asset_trade(source_type, trade_data, assets=['GC', 'BTC-SPOT']):
     """
@@ -12026,10 +12124,12 @@ class LiveDataHandler(BaseHTTPRequestHandler):
                         zone['trade'] = calculate_trade_framework(zone, target_pts=10)
 
                 # Record top 3 zone ideas for comparison (only if price is close)
+                # Records with full Entry/SL/TP1/TP2/TP3 for Zone vs Clawd comparison
                 for zone in buy_zones[:3]:
                     distance = abs(zone.get('distance', 999))
-                    # Record zones within 50 pts of current price as active ideas
-                    if distance < 50 and current_price > 0:
+                    status = zone.get('status', '')
+                    # Record zones that are WATCHING or within 50pts
+                    if (status == 'WATCHING' or distance < 50) and current_price > 0:
                         record_zone_idea(current_asset, zone, current_price)
 
                 # Get session IBs
@@ -13184,7 +13284,22 @@ class LiveDataHandler(BaseHTTPRequestHandler):
                         'closest_zone': closest_zone,
                         'entry_distance_from_zone': round(min_distance, 1),
                         'zone_distances': {k: round(v, 1) for k, v in sorted(zone_distances.items(), key=lambda x: x[1])[:5]},
-                        'zone_source': closest_zone if is_zone_aligned else 'mid_session'
+                        'zone_source': closest_zone if is_zone_aligned else 'mid_session',
+                        # Source: ZONE (Zone Participation idea) or CLAWD (Clawd Bot signal)
+                        'source': trade.get('source', 'CLAWD'),  # Default to CLAWD for legacy trades
+                        # Full trade framework for comparison
+                        'trade_framework': {
+                            'entry': entry_price,
+                            'stop': stop,
+                            'risk_pts': abs(entry_price - stop) if stop else 0,
+                            'targets': targets,
+                            't1': targets[0] if len(targets) > 0 else None,
+                            't2': targets[1] if len(targets) > 1 else None,
+                            't3': targets[2] if len(targets) > 2 else None,
+                            't1_pts': abs(targets[0] - entry_price) if len(targets) > 0 else 0,
+                            't2_pts': abs(targets[1] - entry_price) if len(targets) > 1 else 0,
+                            't3_pts': abs(targets[2] - entry_price) if len(targets) > 2 else 0,
+                        }
                     })
 
                 # Calculate comparison insights
