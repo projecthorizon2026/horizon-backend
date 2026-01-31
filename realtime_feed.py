@@ -262,6 +262,295 @@ def update_zone_idea_status(idea_id, status, exit_price=None, triggered_at=None)
         return False
 
 # ============================================
+# DUAL-ASSET TRADE LOGGING SYSTEM
+# Records both Zone Participation and Clawd-style entries for BTC & Gold
+# ============================================
+dual_asset_trades_file = os.path.join(os.path.dirname(__file__), 'dual_asset_trades.json')
+dual_asset_lock = threading.Lock()
+
+def load_dual_asset_trades():
+    """Load dual asset trade records."""
+    try:
+        if os.path.exists(dual_asset_trades_file):
+            with open(dual_asset_trades_file, 'r') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"⚠️ Error loading dual asset trades: {e}")
+    return {
+        'GC': {'zone_ideas': [], 'clawd_ideas': []},
+        'BTC-SPOT': {'zone_ideas': [], 'clawd_ideas': []},
+    }
+
+def save_dual_asset_trades(data):
+    """Save dual asset trade records."""
+    try:
+        with open(dual_asset_trades_file, 'w') as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"⚠️ Error saving dual asset trades: {e}")
+
+def record_dual_asset_trade(source_type, trade_data, assets=['GC', 'BTC-SPOT']):
+    """
+    Record a trade idea for multiple assets.
+    source_type: 'zone' or 'clawd'
+    trade_data: dict with entry, stop, targets, direction, etc.
+    assets: list of assets to record for
+    """
+    with dual_asset_lock:
+        data = load_dual_asset_trades()
+        now = time.time()
+
+        for asset in assets:
+            if asset not in data:
+                data[asset] = {'zone_ideas': [], 'clawd_ideas': []}
+
+            list_key = 'zone_ideas' if source_type == 'zone' else 'clawd_ideas'
+
+            # Scale entry/stop/targets for asset if needed
+            scaled_trade = scale_trade_for_asset(trade_data.copy(), asset)
+
+            record = {
+                'id': f"{asset}_{source_type}_{int(now*1000)}",
+                'timestamp': now,
+                'datetime': datetime.now().isoformat(),
+                'asset': asset,
+                'source': source_type,
+                'direction': scaled_trade.get('direction', 'LONG'),
+                'entry': scaled_trade.get('entry', 0),
+                'stop': scaled_trade.get('stop', 0),
+                'targets': scaled_trade.get('targets', []),
+                'confidence': scaled_trade.get('confidence', 'MEDIUM'),
+                'zone_name': scaled_trade.get('zone_name', ''),
+                'bias': scaled_trade.get('bias', ''),
+                'signal_time': datetime.now().strftime('%I:%M %p'),
+                'status': 'PENDING',
+                'result': None,
+                'pnl_pts': None,
+                'pnl_dollars': None,
+            }
+
+            data[asset][list_key].append(record)
+
+            # Keep last 200 per type
+            if len(data[asset][list_key]) > 200:
+                data[asset][list_key] = data[asset][list_key][-200:]
+
+            print(f"📝 Dual-asset {source_type} trade logged: {asset} {record['direction']} @ {record['entry']}")
+
+        save_dual_asset_trades(data)
+        return True
+
+def scale_trade_for_asset(trade, target_asset):
+    """Scale trade levels from source asset to target asset."""
+    # If trade already has asset-specific data, use it
+    if trade.get('asset') == target_asset:
+        return trade
+
+    # Determine source asset from trade
+    source_asset = trade.get('asset', 'GC')
+
+    # If same asset, no scaling needed
+    if source_asset == target_asset:
+        return trade
+
+    # Get approximate price ratios for scaling
+    # Gold ~$2700-2800, BTC ~$80000-100000
+    # Ratio: BTC/GC ≈ 30-35
+    if source_asset == 'GC' and target_asset == 'BTC-SPOT':
+        # Scale up from Gold to BTC (multiply by ~30)
+        scale_factor = 30
+    elif source_asset == 'BTC-SPOT' and target_asset == 'GC':
+        # Scale down from BTC to Gold (divide by ~30)
+        scale_factor = 1/30
+    else:
+        scale_factor = 1
+
+    # Don't scale - instead use asset-specific zone logic
+    # The zone levels are different for each asset
+    # Just copy the structure without price scaling
+    return trade
+
+def generate_btc_backtest_from_zones(start_date='2025-01-30'):
+    """
+    Generate backtest entries for BTC-SPOT based on Zone Participation logic.
+    Uses historical BTC price data and applies same zone entry methodology.
+    """
+    from datetime import datetime, timedelta
+    import requests
+
+    try:
+        # Fetch BTC historical data from CoinGecko (free, no API key needed)
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        days_back = (datetime.now() - start_dt).days + 1
+
+        url = f"https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days={days_back}&interval=hourly"
+        resp = requests.get(url, timeout=30)
+
+        if resp.status_code != 200:
+            return {'error': f'Failed to fetch BTC data: {resp.status_code}'}
+
+        data = resp.json()
+        prices = data.get('prices', [])
+
+        if not prices:
+            return {'error': 'No price data returned'}
+
+        # Generate zone-based entries
+        backtest_trades = []
+
+        # Process prices to find potential zone entries
+        # Zone Participation logic: enter at session highs/lows
+        hourly_data = []
+        for ts, price in prices:
+            dt = datetime.fromtimestamp(ts/1000)
+            hourly_data.append({
+                'timestamp': ts,
+                'datetime': dt.isoformat(),
+                'price': price,
+                'hour': dt.hour
+            })
+
+        # Group by day
+        days = {}
+        for point in hourly_data:
+            date_key = point['datetime'][:10]
+            if date_key not in days:
+                days[date_key] = []
+            days[date_key].append(point)
+
+        # For each day, find session extremes and generate entries
+        for date_key, day_points in days.items():
+            if len(day_points) < 4:
+                continue
+
+            # Find session boundaries (approximate)
+            # Asia: 18:00-02:00 ET, London: 02:00-08:00, US: 08:00-16:00
+            asia_points = [p for p in day_points if 18 <= p['hour'] <= 23 or 0 <= p['hour'] < 2]
+            london_points = [p for p in day_points if 2 <= p['hour'] < 8]
+            us_points = [p for p in day_points if 8 <= p['hour'] < 16]
+
+            sessions = [
+                ('Asia', asia_points),
+                ('London', london_points),
+                ('US', us_points)
+            ]
+
+            for session_name, session_points in sessions:
+                if len(session_points) < 2:
+                    continue
+
+                session_high = max(p['price'] for p in session_points)
+                session_low = min(p['price'] for p in session_points)
+                session_range = session_high - session_low
+
+                if session_range < 100:  # Need meaningful range for BTC
+                    continue
+
+                # Zone entry at session low (LONG)
+                long_entry = session_low + (session_range * 0.05)  # 5% above low
+                long_stop = session_low - (session_range * 0.15)  # 15% below low
+                long_t1 = long_entry + session_range * 0.3
+                long_t2 = long_entry + session_range * 0.6
+                long_t3 = session_high
+
+                # Zone entry at session high (SHORT)
+                short_entry = session_high - (session_range * 0.05)  # 5% below high
+                short_stop = session_high + (session_range * 0.15)  # 15% above high
+                short_t1 = short_entry - session_range * 0.3
+                short_t2 = short_entry - session_range * 0.6
+                short_t3 = session_low
+
+                # Find actual high/low of next few hours for outcome
+                future_points = [p for p in day_points if p['timestamp'] > session_points[-1]['timestamp']]
+                if not future_points:
+                    continue
+
+                future_high = max(p['price'] for p in future_points[:8]) if future_points else session_high
+                future_low = min(p['price'] for p in future_points[:8]) if future_points else session_low
+
+                # Evaluate LONG trade
+                long_hit_stop = future_low <= long_stop
+                long_hit_t1 = future_high >= long_t1
+                long_hit_t2 = future_high >= long_t2
+                long_result = 'WIN' if long_hit_t1 and not long_hit_stop else ('LOSS' if long_hit_stop else 'PENDING')
+
+                if long_result != 'PENDING':
+                    backtest_trades.append({
+                        'timestamp': session_points[0]['timestamp'] / 1000,
+                        'datetime': session_points[0]['datetime'],
+                        'asset': 'BTC-SPOT',
+                        'contract': 'BTC-SPOT',
+                        'source': 'zone',
+                        'direction': 'LONG',
+                        'session': session_name,
+                        'entry': round(long_entry, 2),
+                        'stop': round(long_stop, 2),
+                        'targets': [round(long_t1, 2), round(long_t2, 2), round(long_t3, 2)],
+                        'session_high': round(session_high, 2),
+                        'session_low': round(session_low, 2),
+                        'result': long_result,
+                        't1_hit': long_hit_t1,
+                        't2_hit': long_hit_t2,
+                        'signal_time': session_points[0]['datetime'][11:16],
+                        'zone_name': f'{session_name} Session Low',
+                        'confidence': 'HIGH' if session_range > 500 else 'MEDIUM',
+                        'pnl_pts': round(long_t1 - long_entry if long_result == 'WIN' else long_stop - long_entry, 1),
+                        'pnl_dollars': round((long_t1 - long_entry if long_result == 'WIN' else long_stop - long_entry) * 0.1, 0),  # Rough $
+                    })
+
+                # Evaluate SHORT trade
+                short_hit_stop = future_high >= short_stop
+                short_hit_t1 = future_low <= short_t1
+                short_hit_t2 = future_low <= short_t2
+                short_result = 'WIN' if short_hit_t1 and not short_hit_stop else ('LOSS' if short_hit_stop else 'PENDING')
+
+                if short_result != 'PENDING':
+                    backtest_trades.append({
+                        'timestamp': session_points[0]['timestamp'] / 1000,
+                        'datetime': session_points[0]['datetime'],
+                        'asset': 'BTC-SPOT',
+                        'contract': 'BTC-SPOT',
+                        'source': 'zone',
+                        'direction': 'SHORT',
+                        'session': session_name,
+                        'entry': round(short_entry, 2),
+                        'stop': round(short_stop, 2),
+                        'targets': [round(short_t1, 2), round(short_t2, 2), round(short_t3, 2)],
+                        'session_high': round(session_high, 2),
+                        'session_low': round(session_low, 2),
+                        'result': short_result,
+                        't1_hit': short_hit_t1,
+                        't2_hit': short_hit_t2,
+                        'signal_time': session_points[0]['datetime'][11:16],
+                        'zone_name': f'{session_name} Session High',
+                        'confidence': 'HIGH' if session_range > 500 else 'MEDIUM',
+                        'pnl_pts': round(short_entry - short_t1 if short_result == 'WIN' else short_stop - short_entry, 1),
+                        'pnl_dollars': round((short_entry - short_t1 if short_result == 'WIN' else short_stop - short_entry) * 0.1, 0),
+                    })
+
+        # Store backtest trades
+        with dual_asset_lock:
+            data = load_dual_asset_trades()
+            data['BTC-SPOT']['zone_ideas'] = backtest_trades
+            save_dual_asset_trades(data)
+
+        wins = len([t for t in backtest_trades if t['result'] == 'WIN'])
+        losses = len([t for t in backtest_trades if t['result'] == 'LOSS'])
+
+        return {
+            'success': True,
+            'total_trades': len(backtest_trades),
+            'wins': wins,
+            'losses': losses,
+            'win_rate': round(wins / (wins + losses) * 100, 1) if (wins + losses) > 0 else 0,
+            'trades': backtest_trades
+        }
+
+    except Exception as e:
+        import traceback
+        return {'error': str(e), 'traceback': traceback.format_exc()}
+
+# ============================================
 # GLOBAL STATE
 # ============================================
 lock = threading.Lock()
@@ -12446,13 +12735,68 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             return
 
         # ============================================
+        # BTC BACKTEST ENDPOINT
+        # Generate Zone Participation backtest for BTC from Jan 30th
+        # ============================================
+        if path == '/btc-backtest':
+            try:
+                result = generate_btc_backtest_from_zones('2025-01-30')
+                self.wfile.write(json.dumps(result).encode())
+            except Exception as e:
+                import traceback
+                self.wfile.write(json.dumps({'error': str(e), 'traceback': traceback.format_exc()}).encode())
+            return
+
+        # ============================================
+        # DUAL-ASSET TRADES ENDPOINT
+        # Get all recorded Zone & Clawd trades for both assets
+        # ============================================
+        if path == '/dual-asset-trades':
+            try:
+                data = load_dual_asset_trades()
+
+                # Calculate stats for each asset
+                stats = {}
+                for asset in ['GC', 'BTC-SPOT']:
+                    if asset not in data:
+                        data[asset] = {'zone_ideas': [], 'clawd_ideas': []}
+
+                    zone_trades = data[asset].get('zone_ideas', [])
+                    clawd_trades = data[asset].get('clawd_ideas', [])
+
+                    zone_wins = len([t for t in zone_trades if t.get('result') == 'WIN'])
+                    zone_losses = len([t for t in zone_trades if t.get('result') == 'LOSS'])
+                    clawd_wins = len([t for t in clawd_trades if t.get('result') == 'WIN'])
+                    clawd_losses = len([t for t in clawd_trades if t.get('result') == 'LOSS'])
+
+                    stats[asset] = {
+                        'zone_trades': len(zone_trades),
+                        'zone_wins': zone_wins,
+                        'zone_losses': zone_losses,
+                        'zone_win_rate': round(zone_wins / (zone_wins + zone_losses) * 100, 1) if (zone_wins + zone_losses) > 0 else 0,
+                        'clawd_trades': len(clawd_trades),
+                        'clawd_wins': clawd_wins,
+                        'clawd_losses': clawd_losses,
+                        'clawd_win_rate': round(clawd_wins / (clawd_wins + clawd_losses) * 100, 1) if (clawd_wins + clawd_losses) > 0 else 0,
+                    }
+
+                self.wfile.write(json.dumps({
+                    'trades': data,
+                    'stats': stats,
+                    'timestamp': time.time()
+                }).encode())
+            except Exception as e:
+                self.wfile.write(json.dumps({'error': str(e)}).encode())
+            return
+
+        # ============================================
         # ZONE vs CLAWD COMPARISON ENDPOINT
         # 1:1 comparison of Zone Participation setups vs Clawd trade results
         # ============================================
         if path == '/zone-clawd-comparison':
             try:
                 import os
-                # Load Clawd trades
+                # Load Clawd trades from file
                 trades_file = os.path.expanduser('~/.clawdbot/trade_analytics/trades.json')
                 project_trades_file = os.path.join(os.path.dirname(__file__), 'trades_data.json')
                 if os.path.exists(trades_file):
@@ -12487,7 +12831,54 @@ class LiveDataHandler(BaseHTTPRequestHandler):
                                    if t.get('outcome', {}).get('primary_outcome', {}).get('result') in ['WIN', 'LOSS']
                                    and matches_asset(t)]
 
-                print(f"📊 Zone comparison: {len(evaluated_trades)} trades for {current_asset} (from {len(clawd_trades)} total)")
+                # If no trades found for BTC, try loading from dual_asset_trades (backtest data)
+                if len(evaluated_trades) == 0 and current_asset in ['BTC-SPOT', 'BTC']:
+                    dual_data = load_dual_asset_trades()
+                    btc_zone_trades = dual_data.get('BTC-SPOT', {}).get('zone_ideas', [])
+                    if btc_zone_trades:
+                        print(f"📊 Loading {len(btc_zone_trades)} BTC trades from backtest")
+                        # Convert to evaluated trades format
+                        for t in btc_zone_trades:
+                            if t.get('result') in ['WIN', 'LOSS']:
+                                evaluated_trades.append({
+                                    'timestamp': t.get('datetime', ''),
+                                    'contract': 'BTC-SPOT',
+                                    'signal_time': t.get('signal_time', ''),
+                                    'confidence': t.get('confidence', 'MEDIUM'),
+                                    'bias': t.get('zone_name', ''),
+                                    'bullish': {
+                                        'entry': t.get('entry'),
+                                        'stop': t.get('stop'),
+                                        'targets': t.get('targets', [])
+                                    } if t.get('direction') == 'LONG' else {},
+                                    'bearish': {
+                                        'entry': t.get('entry'),
+                                        'stop': t.get('stop'),
+                                        'targets': t.get('targets', [])
+                                    } if t.get('direction') == 'SHORT' else {},
+                                    'outcome': {
+                                        'direction': t.get('direction'),
+                                        'primary_outcome': {
+                                            'result': t.get('result'),
+                                            'pnl_points': t.get('pnl_pts', 0),
+                                            'pnl_dollars': t.get('pnl_dollars', 0),
+                                            't1_hit': t.get('t1_hit', False),
+                                            't2_hit': t.get('t2_hit', False),
+                                            't3_hit': False,
+                                            'mae': 0,
+                                            'mfe': 0,
+                                            'reward_risk': 0,
+                                        },
+                                        'session_high': t.get('session_high', 0),
+                                        'session_low': t.get('session_low', 0),
+                                    },
+                                    # Pre-computed zone alignment from backtest
+                                    '_zone_aligned': True,
+                                    '_closest_zone': t.get('zone_name', ''),
+                                    '_session': t.get('session', 'Unknown'),
+                                })
+
+                print(f"📊 Zone comparison: {len(evaluated_trades)} trades for {current_asset} (from {len(clawd_trades)} Clawd + backtest)")
 
                 # Analyze each trade's zone alignment
                 zone_aligned_trades = []
@@ -12540,10 +12931,15 @@ class LiveDataHandler(BaseHTTPRequestHandler):
                         targets = trade.get('bearish', {}).get('targets', [])
                         stop = trade.get('bearish', {}).get('stop', 0)
 
+                    # Check if this is backtest data with pre-computed values
+                    is_backtest = trade.get('_zone_aligned') is not None
+
                     # Parse signal time to determine session
                     signal_time = trade.get('signal_time', '')
                     timestamp = trade.get('timestamp', '')
-                    session = 'Unknown'
+
+                    # Use pre-computed session from backtest if available
+                    session = trade.get('_session', 'Unknown')
 
                     # Try to get hour from timestamp first (more reliable)
                     hour = None
@@ -12661,7 +13057,14 @@ class LiveDataHandler(BaseHTTPRequestHandler):
                     # If using session data: within 20% of range at correct extreme
                     # If using zone levels: within 30 points
                     ZONE_THRESHOLD = session_range * 0.20 if not has_zone_levels and session_range > 0 else 30
-                    is_zone_aligned = min_distance <= ZONE_THRESHOLD and closest_zone is not None
+
+                    # Use pre-computed zone alignment for backtest data
+                    if is_backtest:
+                        is_zone_aligned = trade.get('_zone_aligned', False)
+                        closest_zone = trade.get('_closest_zone', closest_zone)
+                        min_distance = 0  # Backtest entries are at zone
+                    else:
+                        is_zone_aligned = min_distance <= ZONE_THRESHOLD and closest_zone is not None
 
                     # Categorize entry accuracy
                     if min_distance <= 5:
