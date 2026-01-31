@@ -213,7 +213,7 @@ def fetch_historical_bars_for_trade(contract, entry_date, entry_time, api_key=No
     if contract.upper() in crypto_symbols or contract.upper().startswith('BTC') or contract.upper().startswith('ETH'):
         print(f"🪙 Routing {contract} to Binance API")
         try:
-            result = fetch_binance_klines(contract, entry_date, entry_time)
+            result = fetch_crypto_klines(contract, entry_date, entry_time)
             if not result:
                 return {"debug": "binance_returned_none", "contract": contract}
             return result
@@ -296,6 +296,63 @@ def fetch_historical_bars_for_trade(contract, entry_date, entry_time, api_key=No
         print(f"ERROR fetching trades: {e}")
         print(tb)
         return {"debug": "exception", "error": str(e), "traceback": tb[:500]}
+
+
+def fetch_crypto_klines(symbol, entry_date, entry_time, interval='1m'):
+    """Fetch klines from CoinGecko for crypto (Binance blocked on Railway)"""
+    import urllib.request
+    import json
+    
+    try:
+        ET = pytz.timezone('America/New_York')
+        
+        hour, minute = map(int, entry_time.split(':')[:2])
+        entry_dt = ET.localize(datetime.strptime(entry_date, '%Y-%m-%d').replace(hour=hour, minute=minute))
+        end_dt = entry_dt + timedelta(hours=8)
+        
+        # CoinGecko uses coin IDs
+        coin_map = {'BTCUSD': 'bitcoin', 'BTCUSDT': 'bitcoin', 'BTC': 'bitcoin',
+                    'ETHUSD': 'ethereum', 'ETHUSDT': 'ethereum', 'ETH': 'ethereum'}
+        coin_id = coin_map.get(symbol.upper(), 'bitcoin')
+        
+        # Get market chart data (5-min granularity for recent data)
+        start_ts = int(entry_dt.timestamp())
+        end_ts = int(end_dt.timestamp())
+        
+        url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart/range?vs_currency=usd&from={start_ts}&to={end_ts}"
+        
+        print(f"📊 Fetching CoinGecko data for {coin_id}")
+        
+        req = urllib.request.Request(url, headers={'User-Agent': 'ProjectHorizon/1.0'})
+        with urllib.request.urlopen(req, timeout=30) as response:
+            data = json.loads(response.read().decode())
+        
+        prices = data.get('prices', [])
+        print(f"   Got {len(prices)} price points")
+        
+        if not prices:
+            return None
+        
+        # Convert to bars (CoinGecko gives [timestamp, price] pairs)
+        bars = []
+        for i, p in enumerate(prices):
+            ts_ms, price = p
+            bars.append({
+                'timestamp': datetime.utcfromtimestamp(ts_ms/1000).isoformat(),
+                'open': price,
+                'high': price * 1.001,  # Estimate
+                'low': price * 0.999,
+                'close': price,
+                'volume': 0
+            })
+        
+        return bars if bars else None
+        
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"ERROR fetching crypto data: {e}")
+        return {"debug": "coingecko_error", "error": str(e), "traceback": tb[:300]}
 
 
 def fetch_binance_klines(symbol, entry_date, entry_time, interval='1m'):
