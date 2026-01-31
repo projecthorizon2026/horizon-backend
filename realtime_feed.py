@@ -379,33 +379,52 @@ def generate_btc_backtest_from_zones(start_date='2025-01-30'):
     import requests
 
     try:
+        import urllib.request
+        import ssl
+
         # Fetch BTC historical data
         start_dt = datetime.strptime(start_date, '%Y-%m-%d')
-        days_back = (datetime.now() - start_dt).days + 1
+        start_ts = int(start_dt.timestamp() * 1000)
+        end_ts = int(datetime.now().timestamp() * 1000)
 
-        # Try CryptoCompare first (more reliable from cloud)
+        # SSL context for API calls
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-        url = f"https://min-api.cryptocompare.com/data/v2/histohour?fsym=BTC&tsym=USD&limit={min(days_back * 24, 2000)}"
-        resp = requests.get(url, headers=headers, timeout=30)
+        prices = []
 
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get('Response') == 'Success':
-                raw_prices = data.get('Data', {}).get('Data', [])
-                prices = [[p['time'] * 1000, p['close']] for p in raw_prices if p.get('close')]
-            else:
-                prices = []
-        else:
-            # Fallback to CoinGecko with proper headers
-            url = f"https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days={days_back}&interval=hourly"
-            resp = requests.get(url, headers=headers, timeout=30)
-            if resp.status_code != 200:
-                return {'error': f'Failed to fetch BTC data: {resp.status_code}'}
-            data = resp.json()
-            prices = data.get('prices', [])
+        # Try Binance public klines API (no auth needed, works globally)
+        try:
+            # Binance klines: GET /api/v3/klines
+            url = f"https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&startTime={start_ts}&endTime={end_ts}&limit=1000"
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=30, context=ctx) as response:
+                data = json.loads(response.read().decode())
+                # Binance klines format: [[open_time, open, high, low, close, volume, ...], ...]
+                prices = [[k[0], float(k[4])] for k in data]  # [timestamp, close_price]
+                print(f"📊 Loaded {len(prices)} hourly candles from Binance")
+        except Exception as e:
+            print(f"⚠️ Binance API failed: {e}")
+
+        # Fallback to CryptoCompare if Binance fails
+        if not prices:
+            try:
+                days_back = (datetime.now() - start_dt).days + 1
+                url = f"https://min-api.cryptocompare.com/data/v2/histohour?fsym=BTC&tsym=USD&limit={min(days_back * 24, 2000)}"
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=30, context=ctx) as response:
+                    data = json.loads(response.read().decode())
+                    if data.get('Response') == 'Success':
+                        raw_prices = data.get('Data', {}).get('Data', [])
+                        prices = [[p['time'] * 1000, p['close']] for p in raw_prices if p.get('close')]
+                        print(f"📊 Loaded {len(prices)} hourly candles from CryptoCompare")
+            except Exception as e:
+                print(f"⚠️ CryptoCompare API failed: {e}")
 
         if not prices:
-            return {'error': 'No price data returned from APIs'}
+            return {'error': 'Failed to fetch BTC data from all sources'}
 
         # Generate zone-based entries
         backtest_trades = []
