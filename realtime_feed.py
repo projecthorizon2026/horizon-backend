@@ -10470,7 +10470,7 @@ class LiveDataHandler(BaseHTTPRequestHandler):
                 if not entry_price or not entry_time or not entry_date:
                     self.wfile.write(json.dumps({'error': 'Missing required params'}).encode())
                     return
-                bars = fetch_historical_bars_for_trade(contract, entry_date, entry_time)
+                bars = fetch_historical_bars_for_trade(contract, entry_date, entry_time, API_KEY)
                 if not bars:
                     self.wfile.write(json.dumps({'error': 'No bar data', 'entry_date': entry_date}).encode())
                     return
