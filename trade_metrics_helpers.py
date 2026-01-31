@@ -206,8 +206,14 @@ def process_bars_for_trade_metrics(bars, entry_price, direction, stop_price, tar
 
 def fetch_historical_bars_for_trade(contract, entry_date, entry_time, api_key=None):
     """
-    Fetch trades from Databento and aggregate to 1-min bars.
+    Fetch trades from Databento (futures) or Binance (crypto) and aggregate to 1-min bars.
     """
+    # Route crypto to Binance
+    crypto_symbols = ['BTCUSD', 'BTCUSDT', 'ETHUSD', 'ETHUSDT', 'BTC', 'ETH']
+    if contract.upper() in crypto_symbols or contract.upper().startswith('BTC') or contract.upper().startswith('ETH'):
+        print(f"🪙 Routing {contract} to Binance API")
+        return fetch_binance_klines(contract, entry_date, entry_time)
+    
     try:
         import databento as db
     except ImportError:
@@ -284,3 +290,59 @@ def fetch_historical_bars_for_trade(contract, entry_date, entry_time, api_key=No
         print(f"ERROR fetching trades: {e}")
         print(tb)
         return {"debug": "exception", "error": str(e), "traceback": tb[:500]}
+
+
+def fetch_binance_klines(symbol, entry_date, entry_time, interval='1m'):
+    """Fetch 1-min klines from Binance for crypto"""
+    import urllib.request
+    import json
+    
+    try:
+        ET = pytz.timezone('America/New_York')
+        UTC = pytz.UTC
+        
+        hour, minute = map(int, entry_time.split(':')[:2])
+        entry_dt = ET.localize(datetime.strptime(entry_date, '%Y-%m-%d').replace(hour=hour, minute=minute))
+        
+        # End 8 hours later or end of day
+        end_dt = entry_dt + timedelta(hours=8)
+        
+        start_ms = int(entry_dt.timestamp() * 1000)
+        end_ms = int(end_dt.timestamp() * 1000)
+        
+        # Binance symbol mapping
+        symbol_map = {
+            'BTCUSD': 'BTCUSDT',
+            'BTCUSDT': 'BTCUSDT', 
+            'ETHUSD': 'ETHUSDT',
+            'ETHUSDT': 'ETHUSDT',
+        }
+        binance_symbol = symbol_map.get(symbol.upper(), symbol.upper())
+        
+        url = f"https://api.binance.com/api/v3/klines?symbol={binance_symbol}&interval={interval}&startTime={start_ms}&endTime={end_ms}&limit=1000"
+        
+        print(f"📊 Fetching Binance klines for {binance_symbol}")
+        print(f"   {entry_dt} to {end_dt}")
+        
+        req = urllib.request.Request(url, headers={'User-Agent': 'ProjectHorizon/1.0'})
+        with urllib.request.urlopen(req, timeout=30) as response:
+            data = json.loads(response.read().decode())
+        
+        print(f"   Got {len(data)} klines")
+        
+        bars = []
+        for k in data:
+            bars.append({
+                'timestamp': datetime.utcfromtimestamp(k[0]/1000).isoformat(),
+                'open': float(k[1]),
+                'high': float(k[2]),
+                'low': float(k[3]),
+                'close': float(k[4]),
+                'volume': float(k[5])
+            })
+        
+        return bars if bars else None
+        
+    except Exception as e:
+        print(f"ERROR fetching Binance klines: {e}")
+        return None
