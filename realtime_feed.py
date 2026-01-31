@@ -395,20 +395,34 @@ def generate_btc_backtest_from_zones(start_date='2025-01-30'):
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
         prices = []
 
-        # Try Binance public klines API (no auth needed, works globally)
+        # Try Coinbase Pro API first (works in US regions where Railway is hosted)
         try:
-            # Binance klines: GET /api/v3/klines
-            url = f"https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&startTime={start_ts}&endTime={end_ts}&limit=1000"
+            granularity = 3600  # 1 hour in seconds
+            start_iso = start_dt.isoformat()
+            end_iso = datetime.now().isoformat()
+            url = f"https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity={granularity}&start={start_iso}&end={end_iso}"
             req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=30, context=ctx) as response:
                 data = json.loads(response.read().decode())
-                # Binance klines format: [[open_time, open, high, low, close, volume, ...], ...]
-                prices = [[k[0], float(k[4])] for k in data]  # [timestamp, close_price]
-                print(f"📊 Loaded {len(prices)} hourly candles from Binance")
+                # Coinbase candles: [[time, low, high, open, close, volume], ...] in reverse order
+                prices = [[c[0] * 1000, float(c[4])] for c in reversed(data)]
+                print(f"📊 Loaded {len(prices)} hourly candles from Coinbase")
         except Exception as e:
-            print(f"⚠️ Binance API failed: {e}")
+            print(f"⚠️ Coinbase API failed: {e}")
 
-        # Fallback to CryptoCompare if Binance fails
+        # Fallback to Binance
+        if not prices:
+            try:
+                url = f"https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&startTime={start_ts}&endTime={end_ts}&limit=1000"
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=30, context=ctx) as response:
+                    data = json.loads(response.read().decode())
+                    prices = [[k[0], float(k[4])] for k in data]
+                    print(f"📊 Loaded {len(prices)} hourly candles from Binance")
+            except Exception as e:
+                print(f"⚠️ Binance API failed: {e}")
+
+        # Fallback to CryptoCompare
         if not prices:
             try:
                 days_back = (datetime.now() - start_dt).days + 1
