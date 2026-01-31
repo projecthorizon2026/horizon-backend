@@ -346,3 +346,5 @@ def fetch_binance_klines(symbol, entry_date, entry_time, interval='1m'):
     except Exception as e:
         print(f"ERROR fetching Binance klines: {e}")
         return None
+
+
