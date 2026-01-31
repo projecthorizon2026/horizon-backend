@@ -1,0 +1,48 @@
+        # Trade metrics endpoint for Clawdbot analytics
+        if path == '/trade-metrics':
+            try:
+                # Get query parameters
+                entry_price = float(query_params.get('entry_price', [0])[0])
+                entry_time = query_params.get('entry_time', [''])[0]  # HH:MM
+                entry_date = query_params.get('entry_date', [''])[0]  # YYYY-MM-DD
+                direction = query_params.get('direction', ['long'])[0].lower()
+                stop_price = float(query_params.get('stop_price', [0])[0])
+                t1 = float(query_params.get('t1', [0])[0]) if query_params.get('t1') else None
+                t2 = float(query_params.get('t2', [0])[0]) if query_params.get('t2') else None
+                t3 = float(query_params.get('t3', [0])[0]) if query_params.get('t3') else None
+                contract = query_params.get('contract', ['GCG26'])[0]
+                
+                targets = [t for t in [t1, t2, t3] if t]
+                
+                if not entry_price or not entry_time or not entry_date:
+                    self.wfile.write(json.dumps({
+                        'error': 'Missing required params: entry_price, entry_time, entry_date'
+                    }).encode())
+                    return
+                
+                # Fetch 1-min bars from Databento
+                bars = fetch_historical_bars_for_trade(contract, entry_date, entry_time)
+                
+                if not bars:
+                    self.wfile.write(json.dumps({
+                        'error': 'No bar data available for this date/time',
+                        'entry_date': entry_date,
+                        'entry_time': entry_time
+                    }).encode())
+                    return
+                
+                # Process metrics
+                metrics = process_bars_for_trade_metrics(
+                    bars=bars,
+                    entry_price=entry_price,
+                    direction=direction,
+                    stop_price=stop_price,
+                    targets=targets
+                )
+                
+                self.wfile.write(json.dumps(metrics).encode())
+                return
+            except Exception as e:
+                self.wfile.write(json.dumps({'error': str(e)}).encode())
+                return
+

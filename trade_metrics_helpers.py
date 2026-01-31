@@ -257,7 +257,7 @@ def fetch_historical_bars_for_trade(contract, entry_date, entry_time, api_key=No
         
         if not records:
             print("   WARNING: No trade records returned")
-            return None
+            return {"debug": "no_records", "start": start_ts, "end": end_ts}
         
         # Find front month instrument
         by_instrument = {}
@@ -276,7 +276,7 @@ def fetch_historical_bars_for_trade(contract, entry_date, entry_time, api_key=No
             print(f"   First bar: {bars[0]['timestamp']} O:{bars[0]['open']:.2f} H:{bars[0]['high']:.2f} L:{bars[0]['low']:.2f} C:{bars[0]['close']:.2f}")
             print(f"   Last bar: {bars[-1]['timestamp']} C:{bars[-1]['close']:.2f}")
         
-        return bars if bars else None
+        return bars if bars else {"debug": "no_bars_after_agg", "record_count": len(records)}
         
     except Exception as e:
         print(f"ERROR fetching trades: {e}")

@@ -10475,8 +10475,8 @@ class LiveDataHandler(BaseHTTPRequestHandler):
                 except Exception as fetch_err:
                     self.wfile.write(json.dumps({"error": f"Fetch error: {fetch_err}", "entry_date": entry_date}).encode())
                     return
-                if not bars:
-                    self.wfile.write(json.dumps({"error": "No bar data returned", "entry_date": entry_date, "api_key_len": len(API_KEY) if API_KEY else 0, "entry_time": entry_time}).encode())
+                if not bars or (isinstance(bars, dict) and 'debug' in bars):
+                    self.wfile.write(json.dumps({"error": "No bar data", "debug_info": bars, "entry_date": entry_date, "entry_time": entry_time}).encode())
                     return
                 metrics = process_bars_for_trade_metrics(bars, entry_price, direction, stop_price, targets)
                 self.wfile.write(json.dumps(metrics).encode())
