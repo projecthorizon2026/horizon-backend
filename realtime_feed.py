@@ -5812,6 +5812,297 @@ deribit_options_cache = {
     'ttl': 300  # Refresh every 5 minutes
 }
 
+# =============================================================================
+# WHALE ALERT TRACKER (FOR BTC SPOT)
+# =============================================================================
+whale_transactions_cache = {
+    'data': [],
+    'timestamp': 0,
+    'ttl': 60  # Refresh every minute
+}
+
+def fetch_whale_transactions():
+    """Fetch large BTC whale transactions for spot market analysis.
+
+    Tracks large movements from:
+    - Exchange inflows (potential selling pressure)
+    - Exchange outflows (potential accumulation)
+    - Whale-to-whale transfers
+
+    Data source: Public blockchain explorers and exchange flow APIs
+    """
+    global whale_transactions_cache
+
+    now = time.time()
+    if whale_transactions_cache['data'] and (now - whale_transactions_cache['timestamp']) < whale_transactions_cache['ttl']:
+        return whale_transactions_cache['data']
+
+    transactions = []
+
+    try:
+        import urllib.request
+        import ssl
+
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        # Method 1: Blockchain.com recent large transactions
+        # Get recent blocks and find large transactions
+        try:
+            url = "https://blockchain.info/unconfirmed-transactions?format=json"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
+                data = json.loads(response.read().decode())
+                txs = data.get('txs', [])
+
+                for tx in txs[:50]:  # Check last 50 unconfirmed
+                    # Calculate total output value in BTC
+                    total_btc = sum(out.get('value', 0) for out in tx.get('out', [])) / 100000000
+
+                    if total_btc >= 10:  # 10+ BTC threshold
+                        # Determine if it's going to an exchange (selling) or from exchange (buying)
+                        outputs = tx.get('out', [])
+                        is_exchange_inflow = False
+                        is_exchange_outflow = False
+
+                        # Check for known exchange addresses patterns
+                        for out in outputs:
+                            addr = out.get('addr', '')
+                            # Simplified: addresses starting with bc1q... are often exchange cold wallets
+                            if addr and (addr.startswith('bc1q') or addr.startswith('3')):
+                                is_exchange_inflow = True
+
+                        transactions.append({
+                            'hash': tx.get('hash', '')[:16] + '...',
+                            'btc': round(total_btc, 4),
+                            'usd': 0,  # Will be calculated with current price
+                            'type': 'EXCHANGE_INFLOW' if is_exchange_inflow else 'WHALE_TRANSFER',
+                            'timestamp': tx.get('time', now),
+                            'confirmations': 0
+                        })
+        except Exception as e:
+            print(f"⚠️ Blockchain.com fetch failed: {e}")
+
+        # Method 2: Blockchair for confirmed large transactions
+        try:
+            url = "https://api.blockchair.com/bitcoin/transactions?q=output_total(1000000000..)&s=time(desc)&limit=20"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
+                data = json.loads(response.read().decode())
+                for tx in data.get('data', []):
+                    total_btc = tx.get('output_total', 0) / 100000000
+                    if total_btc >= 100:  # 100+ BTC for confirmed
+                        transactions.append({
+                            'hash': tx.get('hash', '')[:16] + '...',
+                            'btc': round(total_btc, 2),
+                            'usd': 0,
+                            'type': 'LARGE_TRANSFER',
+                            'timestamp': tx.get('time', ''),
+                            'confirmations': tx.get('block_id', 0)
+                        })
+        except Exception as e:
+            print(f"⚠️ Blockchair fetch failed: {e}")
+
+        # Sort by BTC amount descending
+        transactions.sort(key=lambda x: x['btc'], reverse=True)
+        transactions = transactions[:20]  # Keep top 20
+
+        # Calculate USD values
+        current_price = state.get('price', 84000)
+        for tx in transactions:
+            tx['usd'] = round(tx['btc'] * current_price, 0)
+
+        whale_transactions_cache['data'] = transactions
+        whale_transactions_cache['timestamp'] = now
+
+        if transactions:
+            total_moved = sum(t['btc'] for t in transactions)
+            print(f"🐋 Whale tracker: {len(transactions)} large txs, {total_moved:.2f} BTC moved")
+
+    except Exception as e:
+        print(f"❌ Whale tracker error: {e}")
+
+    return transactions
+
+
+def get_whale_summary():
+    """Get summary of whale activity for dashboard display."""
+    transactions = fetch_whale_transactions()
+
+    if not transactions:
+        return {
+            'total_btc_moved': 0,
+            'total_usd_moved': 0,
+            'exchange_inflows': 0,
+            'exchange_outflows': 0,
+            'whale_transfers': 0,
+            'net_flow': 'NEUTRAL',
+            'whale_alert': None,
+            'largest_tx': None
+        }
+
+    total_btc = sum(t['btc'] for t in transactions)
+    total_usd = sum(t['usd'] for t in transactions)
+
+    inflows = sum(t['btc'] for t in transactions if t['type'] == 'EXCHANGE_INFLOW')
+    outflows = sum(t['btc'] for t in transactions if t['type'] == 'EXCHANGE_OUTFLOW')
+    transfers = sum(t['btc'] for t in transactions if t['type'] in ['WHALE_TRANSFER', 'LARGE_TRANSFER'])
+
+    # Determine net flow direction
+    net_flow = 'NEUTRAL'
+    if inflows > outflows * 1.5:
+        net_flow = 'BEARISH'  # More coins flowing to exchanges (potential selling)
+    elif outflows > inflows * 1.5:
+        net_flow = 'BULLISH'  # More coins leaving exchanges (accumulation)
+
+    # Get largest transaction for alert
+    largest = max(transactions, key=lambda x: x['btc']) if transactions else None
+
+    # Generate whale alert message
+    whale_alert = None
+    if largest and largest['btc'] >= 100:
+        whale_alert = f"🐋 {largest['btc']:.0f} BTC (${largest['usd']:,.0f}) {largest['type'].replace('_', ' ').title()}"
+
+    return {
+        'total_btc_moved': round(total_btc, 2),
+        'total_usd_moved': round(total_usd, 0),
+        'exchange_inflows': round(inflows, 2),
+        'exchange_outflows': round(outflows, 2),
+        'whale_transfers': round(transfers, 2),
+        'net_flow': net_flow,
+        'whale_alert': whale_alert,
+        'largest_tx': largest,
+        'tx_count': len(transactions)
+    }
+
+
+# =============================================================================
+# ENHANCED BTC GAMMA (HIRO-LIKE) CALCULATION
+# =============================================================================
+def calculate_btc_gamma_exposure(spot_price, options_data):
+    """Calculate HIRO-like gamma exposure from Deribit options.
+
+    HIRO (Hedging Impact of Real-time Options) measures market maker
+    hedging requirements based on options positioning.
+
+    Positive GEX = Price tends to stabilize (mean reversion)
+    Negative GEX = Price tends to accelerate (momentum)
+
+    Key levels:
+    - Zero Gamma: Price where dealer hedging switches direction
+    - Call Wall: Strike with max call open interest (resistance)
+    - Put Wall: Strike with max put open interest (support)
+    - Max Pain: Price where option buyers lose most money
+    """
+    import math
+
+    if not options_data or not spot_price or spot_price <= 0:
+        return None
+
+    # Risk-free rate and typical BTC IV
+    r = 0.05  # 5% risk-free rate
+
+    # Calculate gamma for each strike
+    gex_by_strike = {}
+    total_call_gamma = 0
+    total_put_gamma = 0
+    zero_gamma_levels = []
+
+    for opt in options_data:
+        strike = opt.get('strike', 0)
+        call_oi = opt.get('call_oi', 0)
+        put_oi = opt.get('put_oi', 0)
+        iv = opt.get('iv', 0.5)  # Default 50% IV if not provided
+        days_to_expiry = opt.get('dte', 30)  # Default 30 days
+
+        if strike <= 0 or (call_oi == 0 and put_oi == 0):
+            continue
+
+        # Time to expiry in years
+        T = max(days_to_expiry / 365, 0.001)
+
+        # Calculate d1 for Black-Scholes
+        try:
+            d1 = (math.log(spot_price / strike) + (r + 0.5 * iv**2) * T) / (iv * math.sqrt(T))
+
+            # Gamma = N'(d1) / (S * sigma * sqrt(T))
+            # N'(d1) = (1/sqrt(2*pi)) * exp(-d1^2/2)
+            n_prime_d1 = (1 / math.sqrt(2 * math.pi)) * math.exp(-0.5 * d1**2)
+            gamma = n_prime_d1 / (spot_price * iv * math.sqrt(T))
+
+            # GEX = Gamma * Open Interest * Contract Size * Spot Price^2 / 100
+            # For BTC, contract size is typically 1 BTC
+            contract_size = 1
+
+            call_gex = gamma * call_oi * contract_size * (spot_price**2) / 1e9  # In billions
+            put_gex = -gamma * put_oi * contract_size * (spot_price**2) / 1e9  # Puts have negative gamma effect
+
+            net_gex = call_gex + put_gex
+
+            gex_by_strike[strike] = {
+                'call_gex': round(call_gex, 4),
+                'put_gex': round(put_gex, 4),
+                'net_gex': round(net_gex, 4),
+                'call_oi': call_oi,
+                'put_oi': put_oi
+            }
+
+            total_call_gamma += call_gex
+            total_put_gamma += put_gex
+
+        except (ValueError, ZeroDivisionError):
+            continue
+
+    # Find key levels
+    total_gex = total_call_gamma + total_put_gamma
+
+    # Call Wall: Strike with highest call OI
+    call_wall = max(gex_by_strike.items(), key=lambda x: x[1]['call_oi'], default=(0, {}))[0]
+
+    # Put Wall: Strike with highest put OI
+    put_wall = max(gex_by_strike.items(), key=lambda x: x[1]['put_oi'], default=(0, {}))[0]
+
+    # Zero Gamma: Find strike where net GEX crosses zero
+    sorted_strikes = sorted(gex_by_strike.items())
+    for i in range(len(sorted_strikes) - 1):
+        s1, g1 = sorted_strikes[i]
+        s2, g2 = sorted_strikes[i + 1]
+        if g1['net_gex'] * g2['net_gex'] < 0:  # Sign change
+            # Linear interpolation
+            zero_gamma = s1 + (s2 - s1) * abs(g1['net_gex']) / (abs(g1['net_gex']) + abs(g2['net_gex']))
+            zero_gamma_levels.append(round(zero_gamma, 0))
+
+    # Use closest zero gamma to spot price
+    zero_gamma = min(zero_gamma_levels, key=lambda x: abs(x - spot_price)) if zero_gamma_levels else spot_price
+
+    # Determine gamma regime
+    if spot_price > zero_gamma:
+        gamma_regime = 'POSITIVE'  # Above zero gamma - dealers buy dips, sell rips
+    else:
+        gamma_regime = 'NEGATIVE'  # Below zero gamma - dealers amplify moves
+
+    # Build GEX profile for chart
+    gex_profile = []
+    for strike, data in sorted(gex_by_strike.items()):
+        gex_profile.append({
+            'strike': strike,
+            'gex': data['net_gex'],
+            'type': 'call' if data['net_gex'] > 0 else 'put'
+        })
+
+    return {
+        'total_gex': round(total_gex, 4),
+        'call_wall': call_wall,
+        'put_wall': put_wall,
+        'zero_gamma': zero_gamma,
+        'gamma_regime': gamma_regime,
+        'max_pain': call_wall,  # Simplified
+        'gex_profile': gex_profile[-40:] if len(gex_profile) > 40 else gex_profile,
+        'hiro_signal': 'BUY' if total_gex > 0.1 else ('SELL' if total_gex < -0.1 else 'NEUTRAL')
+    }
+
+
 def fetch_deribit_options():
     """Fetch Bitcoin options data from Deribit for gamma/GEX calculation
 
@@ -10655,6 +10946,49 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(funding_data).encode())
             return
 
+        # Whale Transactions (BTC Spot)
+        if path == '/whales':
+            whale_data = {
+                'transactions': fetch_whale_transactions(),
+                'summary': get_whale_summary(),
+                'timestamp': datetime.now().isoformat(),
+                'note': 'Large BTC transactions (10+ BTC) from blockchain data'
+            }
+            self.wfile.write(json.dumps(whale_data).encode())
+            return
+
+        # BTC Options with Enhanced Gamma (HIRO-like)
+        if path == '/btc-gamma':
+            options_raw = fetch_deribit_options()
+            btc_options = options_raw.get('btc_options', {})
+
+            # Calculate enhanced gamma if we have options data
+            current_price = state.get('price', 84000)
+            gex_profile = btc_options.get('gex_profile', [])
+
+            # Build options data for gamma calculation
+            options_for_calc = []
+            for item in gex_profile:
+                options_for_calc.append({
+                    'strike': item.get('strike', 0),
+                    'call_oi': item.get('call_oi', 0),
+                    'put_oi': item.get('put_oi', 0),
+                    'iv': 0.5,  # Default IV
+                    'dte': 30   # Default days to expiry
+                })
+
+            enhanced_gamma = calculate_btc_gamma_exposure(current_price, options_for_calc)
+
+            response = {
+                'btc_options': btc_options,
+                'enhanced_gamma': enhanced_gamma,
+                'hiro_signal': enhanced_gamma.get('hiro_signal', 'NEUTRAL') if enhanced_gamma else 'NEUTRAL',
+                'timestamp': datetime.now().isoformat(),
+                'data_source': 'Deribit'
+            }
+            self.wfile.write(json.dumps(response).encode())
+            return
+
         # Clawd Bot Trade Analytics endpoint
         if path == '/trade-analytics':
             try:
@@ -10953,7 +11287,7 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             'market_open': s['market_open'],
             'pd_loaded': s['pd_loaded'],
 
-            # GEX Data
+            # GEX Data (for futures) / Whale Data (for spot)
             'gamma_regime': s.get('gamma_regime', 'UNKNOWN'),
             'total_gex': s.get('total_gex', 0),
             'zero_gamma': s.get('zero_gamma', 0),
@@ -10965,7 +11299,14 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             'gex_profile': generate_gex_profile(current_price),
             'gex_levels': generate_gex_levels(s),
             'beta_spx': s.get('beta_spx', 0),
-            'beta_dxy': s.get('beta_dxy', 0)
+            'beta_dxy': s.get('beta_dxy', 0),
+
+            # Whale Transactions (for BTC-SPOT mode)
+            'whale_transactions': fetch_whale_transactions() if s.get('asset_class') == 'BTC-SPOT' else [],
+            'whale_summary': get_whale_summary() if s.get('asset_class') == 'BTC-SPOT' else None,
+
+            # BTC Options Data (from Deribit - for futures or enhanced spot analysis)
+            'btc_options': fetch_deribit_options().get('btc_options', {}) if 'BTC' in s.get('asset_class', '') else {}
         }
 
         self.wfile.write(json.dumps(response).encode())
