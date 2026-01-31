@@ -5813,6 +5813,240 @@ deribit_options_cache = {
 }
 
 # =============================================================================
+# BTC WHALE ANALYSIS (FREE - Binance Data)
+# =============================================================================
+btc_whale_cache = {
+    'data': None,
+    'timestamp': 0,
+    'ttl': 30  # Refresh every 30 seconds
+}
+
+def fetch_btc_whale_analysis():
+    """Fetch comprehensive BTC whale data from Binance (FREE API).
+
+    Includes:
+    - Open Interest (total futures positions)
+    - Funding Rate (market sentiment)
+    - 24h Volume & Trades
+    - Large Trade Detection
+    - Long/Short Ratio estimation
+    """
+    global btc_whale_cache
+
+    now = time.time()
+    if btc_whale_cache['data'] and (now - btc_whale_cache['timestamp']) < btc_whale_cache['ttl']:
+        return btc_whale_cache['data']
+
+    result = {
+        'open_interest': {},
+        'funding': {},
+        'volume_24h': {},
+        'large_trades': [],
+        'whale_pressure': 'NEUTRAL',
+        'timestamp': datetime.now().isoformat()
+    }
+
+    try:
+        import urllib.request
+        import ssl
+
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        # 1. Open Interest
+        try:
+            url = "https://fapi.binance.com/fapi/v1/openInterest?symbol=BTCUSDT"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
+                data = json.loads(response.read().decode())
+                oi_btc = float(data.get('openInterest', 0))
+                current_price = state.get('price', 84000)
+                result['open_interest'] = {
+                    'btc': round(oi_btc, 2),
+                    'usd': round(oi_btc * current_price / 1e9, 2),  # In billions
+                    'usd_formatted': f"${oi_btc * current_price / 1e9:.2f}B"
+                }
+        except Exception as e:
+            print(f"⚠️ OI fetch failed: {e}")
+
+        # 2. Funding Rate
+        try:
+            url = "https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTCUSDT&limit=10"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
+                data = json.loads(response.read().decode())
+                if data and len(data) > 0:
+                    latest = data[-1]
+                    rate = float(latest.get('fundingRate', 0)) * 100
+                    # Annualized rate
+                    annual = rate * 3 * 365  # 3 funding periods per day
+
+                    sentiment = 'NEUTRAL'
+                    if rate > 0.03:
+                        sentiment = 'VERY_BULLISH'
+                    elif rate > 0.01:
+                        sentiment = 'BULLISH'
+                    elif rate < -0.03:
+                        sentiment = 'VERY_BEARISH'
+                    elif rate < -0.01:
+                        sentiment = 'BEARISH'
+
+                    result['funding'] = {
+                        'rate': round(rate, 4),
+                        'rate_formatted': f"{rate:.4f}%",
+                        'annualized': round(annual, 2),
+                        'sentiment': sentiment,
+                        'next_in': '8 hours'  # Approximate
+                    }
+        except Exception as e:
+            print(f"⚠️ Funding rate fetch failed: {e}")
+
+        # 3. 24h Volume & Stats
+        try:
+            url = "https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=BTCUSDT"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
+                data = json.loads(response.read().decode())
+                vol_btc = float(data.get('volume', 0))
+                vol_usd = float(data.get('quoteVolume', 0))
+                trades = int(data.get('count', 0))
+                price_change = float(data.get('priceChangePercent', 0))
+
+                result['volume_24h'] = {
+                    'btc': round(vol_btc, 0),
+                    'usd': round(vol_usd / 1e9, 2),
+                    'usd_formatted': f"${vol_usd / 1e9:.2f}B",
+                    'trades': trades,
+                    'trades_formatted': f"{trades:,}",
+                    'price_change_pct': round(price_change, 2),
+                    'avg_trade_size': round(vol_btc / trades, 4) if trades > 0 else 0
+                }
+        except Exception as e:
+            print(f"⚠️ 24h volume fetch failed: {e}")
+
+        # 4. Large Trade Detection from recent aggTrades
+        try:
+            url = "https://fapi.binance.com/fapi/v1/aggTrades?symbol=BTCUSDT&limit=1000"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
+                trades = json.loads(response.read().decode())
+
+                large_trades = []
+                buy_volume = 0
+                sell_volume = 0
+
+                for trade in trades:
+                    qty = float(trade.get('q', 0))
+                    price = float(trade.get('p', 0))
+                    is_seller_maker = trade.get('m', False)  # True = sell aggression
+                    usd_value = qty * price
+
+                    if is_seller_maker:
+                        sell_volume += qty
+                    else:
+                        buy_volume += qty
+
+                    # Large trade threshold: $100K+
+                    if usd_value >= 100000:
+                        large_trades.append({
+                            'btc': round(qty, 4),
+                            'usd': round(usd_value, 0),
+                            'price': round(price, 2),
+                            'side': 'SELL' if is_seller_maker else 'BUY',
+                            'timestamp': trade.get('T', 0)
+                        })
+
+                # Sort by size descending
+                large_trades.sort(key=lambda x: x['usd'], reverse=True)
+                result['large_trades'] = large_trades[:20]  # Top 20
+
+                # Calculate whale pressure
+                total = buy_volume + sell_volume
+                if total > 0:
+                    buy_pct = (buy_volume / total) * 100
+                    sell_pct = (sell_volume / total) * 100
+
+                    if buy_pct > 55:
+                        result['whale_pressure'] = 'BULLISH'
+                    elif sell_pct > 55:
+                        result['whale_pressure'] = 'BEARISH'
+                    else:
+                        result['whale_pressure'] = 'NEUTRAL'
+
+                    result['buy_sell_ratio'] = {
+                        'buy_pct': round(buy_pct, 1),
+                        'sell_pct': round(sell_pct, 1),
+                        'buy_btc': round(buy_volume, 2),
+                        'sell_btc': round(sell_volume, 2),
+                        'net_btc': round(buy_volume - sell_volume, 2)
+                    }
+
+        except Exception as e:
+            print(f"⚠️ Large trades fetch failed: {e}")
+
+        btc_whale_cache['data'] = result
+        btc_whale_cache['timestamp'] = now
+
+        # Log summary
+        oi = result.get('open_interest', {}).get('usd_formatted', 'N/A')
+        funding = result.get('funding', {}).get('rate_formatted', 'N/A')
+        pressure = result.get('whale_pressure', 'N/A')
+        print(f"🐋 Whale Analysis: OI={oi}, Funding={funding}, Pressure={pressure}")
+
+    except Exception as e:
+        print(f"❌ Whale analysis error: {e}")
+
+    return result
+
+
+def get_whale_analysis_summary():
+    """Get a summary of whale activity for quick display."""
+    data = fetch_btc_whale_analysis()
+
+    oi = data.get('open_interest', {})
+    funding = data.get('funding', {})
+    volume = data.get('volume_24h', {})
+    ratio = data.get('buy_sell_ratio', {})
+
+    # Determine overall whale sentiment
+    signals = []
+    if funding.get('sentiment') in ['BULLISH', 'VERY_BULLISH']:
+        signals.append('BULL')
+    elif funding.get('sentiment') in ['BEARISH', 'VERY_BEARISH']:
+        signals.append('BEAR')
+
+    if data.get('whale_pressure') == 'BULLISH':
+        signals.append('BULL')
+    elif data.get('whale_pressure') == 'BEARISH':
+        signals.append('BEAR')
+
+    bull_count = signals.count('BULL')
+    bear_count = signals.count('BEAR')
+
+    if bull_count > bear_count:
+        overall = 'BULLISH'
+    elif bear_count > bull_count:
+        overall = 'BEARISH'
+    else:
+        overall = 'NEUTRAL'
+
+    return {
+        'overall_sentiment': overall,
+        'open_interest_usd': oi.get('usd_formatted', 'N/A'),
+        'funding_rate': funding.get('rate_formatted', 'N/A'),
+        'funding_sentiment': funding.get('sentiment', 'N/A'),
+        'volume_24h_usd': volume.get('usd_formatted', 'N/A'),
+        'trades_24h': volume.get('trades_formatted', 'N/A'),
+        'buy_pct': ratio.get('buy_pct', 50),
+        'sell_pct': ratio.get('sell_pct', 50),
+        'net_flow_btc': ratio.get('net_btc', 0),
+        'whale_pressure': data.get('whale_pressure', 'NEUTRAL'),
+        'large_trade_count': len(data.get('large_trades', []))
+    }
+
+
+# =============================================================================
 # ICEBERG ORDER DETECTION
 # =============================================================================
 iceberg_cache = {
@@ -11219,6 +11453,13 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(whale_data).encode())
             return
 
+        # BTC Whale Analysis (Free Binance Data)
+        if path == '/whale-analysis':
+            whale_data = fetch_btc_whale_analysis()
+            whale_data['summary'] = get_whale_analysis_summary()
+            self.wfile.write(json.dumps(whale_data).encode())
+            return
+
         # Iceberg Order Detection (BTC)
         if path == '/icebergs':
             iceberg_data = {
@@ -11581,6 +11822,10 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             # Iceberg Order Detection (for BTC modes)
             'icebergs': detect_iceberg_orders() if 'BTC' in s.get('asset_class', '') else [],
             'iceberg_summary': get_iceberg_summary() if 'BTC' in s.get('asset_class', '') else None,
+
+            # BTC Whale Analysis (Binance free data)
+            'whale_analysis': fetch_btc_whale_analysis() if 'BTC' in s.get('asset_class', '') else {},
+            'whale_summary': get_whale_analysis_summary() if 'BTC' in s.get('asset_class', '') else None,
 
             # BTC Options Data (from Deribit - for futures or enhanced spot analysis)
             'btc_options': fetch_deribit_options().get('btc_options', {}) if 'BTC' in s.get('asset_class', '') else {}
