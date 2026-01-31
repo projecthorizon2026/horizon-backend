@@ -10550,6 +10550,11 @@ class LiveDataHandler(BaseHTTPRequestHandler):
                 t2_hits = sum(1 for t in evaluated if t['outcome']['primary_outcome'].get('t2_hit'))
                 t3_hits = sum(1 for t in evaluated if t['outcome']['primary_outcome'].get('t3_hit'))
 
+                # Calculate overall avg R:R
+                all_rrs = [t['outcome']['primary_outcome'].get('reward_risk', 0) for t in evaluated if t['outcome']['primary_outcome'].get('reward_risk', 0) > 0]
+                all_maes = [t['outcome']['primary_outcome'].get('mae', 0) for t in evaluated]
+                all_mfes = [t['outcome']['primary_outcome'].get('mfe', 0) for t in evaluated]
+
                 analytics = {
                     'summary': {
                         'total_signals': len(trades),
@@ -10560,6 +10565,9 @@ class LiveDataHandler(BaseHTTPRequestHandler):
                         'total_pnl': sum(t['outcome']['primary_outcome'].get('pnl_dollars', 0) for t in evaluated),
                         'avg_winner': round(sum(t['outcome']['primary_outcome'].get('pnl_dollars', 0) for t in wins) / len(wins), 2) if wins else 0,
                         'avg_loser': round(sum(t['outcome']['primary_outcome'].get('pnl_dollars', 0) for t in losses) / len(losses), 2) if losses else 0,
+                        'avg_rr': round(sum(all_rrs) / len(all_rrs), 2) if all_rrs else 0,
+                        'avg_mae': round(sum(all_maes) / len(all_maes), 1) if all_maes else 0,
+                        'avg_mfe': round(sum(all_mfes) / len(all_mfes), 1) if all_mfes else 0,
                     },
                     'by_confidence': {
                         'HIGH': calc_stats(high_conf),
