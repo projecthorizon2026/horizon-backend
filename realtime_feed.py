@@ -2369,6 +2369,163 @@ def classify_open_type():
     day['open_type_confidence'] = confidence
     day['open_direction'] = dominant_dir
 
+def get_btc_swing_candles():
+    """Fetch 5-minute BTC candles from Coinbase for swing detection"""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    try:
+        # Coinbase candles endpoint - 5 minute granularity
+        url = "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=300"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as response:
+            data = json.loads(response.read().decode())
+            if data and len(data) > 10:
+                # Coinbase returns [timestamp, low, high, open, close, volume] newest first
+                candles = []
+                for c in data[:100]:  # Last 100 5-minute candles (~8 hours)
+                    candles.append({
+                        'ts': c[0],
+                        'high': c[2],
+                        'low': c[1],
+                        'open': c[3],
+                        'close': c[4]
+                    })
+                candles.reverse()  # Oldest first
+                return candles
+    except Exception as e:
+        print(f"⚠️ Swing candle fetch failed: {e}")
+    return []
+
+
+def detect_recent_impulse(candles, min_range=200):
+    """
+    Detect the MOST RECENT impulse move for Fibonacci retracement.
+
+    An impulse move is a significant directional move that price is now retracing.
+    This finds the swing high and swing low that define the current retracement zone.
+
+    Strategy:
+    1. Look at the last 50 candles to find confirmed swing points
+    2. Find the most recent significant impulse (swing range >= min_range)
+    3. The impulse defines the 0% to 100% Fib levels
+    """
+    if not candles or len(candles) < 5:
+        return None
+
+    # Work with the most recent candles
+    recent = candles[-50:] if len(candles) >= 50 else candles
+
+    # Find all swing points (3-candle confirmation: center > both neighbors OR center < both neighbors)
+    swing_highs = []  # (index, price)
+    swing_lows = []   # (index, price)
+
+    for i in range(1, len(recent) - 1):
+        curr = recent[i]
+        prev = recent[i - 1]
+        next_c = recent[i + 1]
+
+        curr_high = curr.get('high') or curr.get('price_high') or 0
+        curr_low = curr.get('low') or curr.get('price_low') or 999999
+        prev_high = prev.get('high') or prev.get('price_high') or 0
+        prev_low = prev.get('low') or prev.get('price_low') or 999999
+        next_high = next_c.get('high') or next_c.get('price_high') or 0
+        next_low = next_c.get('low') or next_c.get('price_low') or 999999
+
+        # Skip invalid data
+        if curr_high <= 0 or curr_low >= 999999:
+            continue
+
+        # Swing HIGH: current high > both neighbor highs
+        if curr_high > prev_high and curr_high > next_high:
+            swing_highs.append((i, curr_high))
+
+        # Swing LOW: current low < both neighbor lows
+        if curr_low < prev_low and curr_low < next_low:
+            swing_lows.append((i, curr_low))
+
+    if not swing_highs or not swing_lows:
+        return None
+
+    # Find the most recent significant impulse move
+    # Start from the most recent swing and look for a valid pair
+    all_swings = [(idx, price, 'high') for idx, price in swing_highs] + [(idx, price, 'low') for idx, price in swing_lows]
+    all_swings.sort(key=lambda x: x[0], reverse=True)  # Most recent first
+
+    # Find the most recent swing pair that forms a significant impulse
+    for i, (idx1, price1, type1) in enumerate(all_swings):
+        for idx2, price2, type2 in all_swings[i+1:]:
+            if type1 != type2:  # Need a high-low pair
+                swing_range = abs(price1 - price2)
+                if swing_range >= min_range:
+                    # Found a valid impulse
+                    if type1 == 'high':
+                        # Most recent is high, second is low → DOWN impulse (retracing up)
+                        return {
+                            'swing_high': round(price1, 2),
+                            'swing_low': round(price2, 2),
+                            'swing_high_idx': idx1,
+                            'swing_low_idx': idx2,
+                            'swing_direction': 'down',
+                            'swing_type': 'impulse',
+                            'extensions_direction': 'down'
+                        }
+                    else:
+                        # Most recent is low, second is high → UP impulse (retracing down)
+                        return {
+                            'swing_high': round(price2, 2),
+                            'swing_low': round(price1, 2),
+                            'swing_high_idx': idx2,
+                            'swing_low_idx': idx1,
+                            'swing_direction': 'up',
+                            'swing_type': 'impulse',
+                            'extensions_direction': 'up'
+                        }
+
+    return None
+
+
+def detect_swing_with_fallback(live_history, is_btc=False, min_range=50):
+    """
+    Enhanced swing detection with Coinbase fallback for BTC.
+
+    Uses live volume history when available, fetches from Coinbase when:
+    1. Live history has < 10 candles
+    2. For BTC-SPOT contracts
+    """
+    # Check if we have sufficient live history
+    has_sufficient_history = live_history and len(live_history) >= 10
+
+    # For BTC, try impulse detection with fresh data
+    if is_btc:
+        min_range = 200  # BTC needs larger range ($200+)
+
+        # Try live data first if sufficient
+        if has_sufficient_history:
+            result = detect_recent_impulse(live_history, min_range=min_range)
+            if result:
+                return result
+
+        # Fetch fresh candles from Coinbase
+        fresh_candles = get_btc_swing_candles()
+        if fresh_candles and len(fresh_candles) >= 10:
+            result = detect_recent_impulse(fresh_candles, min_range=min_range)
+            if result:
+                return result
+
+    # Standard swing detection for futures or fallback
+    if has_sufficient_history:
+        return detect_swing_points(live_history, lookback=50, swing_strength=1, min_range=min_range)
+
+    # Return empty swing if nothing works
+    return {
+        'swing_high': 0, 'swing_low': 0, 'swing_direction': 'neutral',
+        'swing_high_idx': -1, 'swing_low_idx': -1,
+        'swing_type': 'none', 'extensions_direction': 'none'
+    }
+
+
 def detect_swing_points(candle_history, lookback=50, swing_strength=1, min_range=50):
     """
     Detect recent swing high and swing low using 3-candle structure.
@@ -10771,24 +10928,12 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             'volume_1h': s['volume_1h'],
 
             # Swing Detection (for Fibonacci retracement)
-            # Finds impulse move direction by checking which extreme (high/low) came first
-            'swing': (lambda candles: (
-                {
-                    'swing_high': round(max(c.get('price_high', 0) for c in candles) if candles else s.get('session_high', 0), 1),
-                    'swing_low': round(min(c.get('price_low', 999999) for c in candles) if candles else s.get('day_low', 0), 1),
-                    'swing_direction': 'down' if (
-                        (max(candles, key=lambda c: c.get('price_high', 0)).get('ts', 0) if candles else 0) <
-                        (min(candles, key=lambda c: c.get('price_low', 999999)).get('ts', 0) if candles else 0)
-                    ) else 'up',
-                    'swing_high_idx': -1,
-                    'swing_low_idx': -1,
-                    'swing_type': 'impulse_based',
-                    'extensions_direction': 'down' if (
-                        (max(candles, key=lambda c: c.get('price_high', 0)).get('ts', 0) if candles else 0) <
-                        (min(candles, key=lambda c: c.get('price_low', 999999)).get('ts', 0) if candles else 0)
-                    ) else 'up'
-                }
-            ))(s['volume_5m'].get('history', [])),
+            # Uses enhanced detection with Coinbase fallback for BTC
+            'swing': detect_swing_with_fallback(
+                s['volume_5m'].get('history', []),
+                is_btc=(s.get('asset_class') == 'BTC-SPOT'),
+                min_range=50 if s.get('asset_class') != 'BTC-SPOT' else 200
+            ),
 
             # Big Trades (Order Flow)
             'big_trades': s.get('big_trades', []),
