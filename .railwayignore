@@ -1,0 +1,24 @@
+# Ignore frontend - deployed separately on Vercel
+frontend/
+node_modules/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Local files
+.env
+*.log
+.DS_Store
+.vercel
+
+# Git
+.git/
+
+# Large data files (keep trades_data.json for analytics)
+red_folder_history.json
+
+# Config files to keep
+!railway.toml
+!trades_data.json

@@ -23336,19 +23336,26 @@ const ContractDropdown = ({ selectedContract, onContractChange, contracts, isMob
           <div style={{ maxHeight: 280, overflowY: 'auto' }}>
             {Object.entries(contracts).map(([key, contract]) => {
               const isSelected = key === selectedContract;
+              // Only GC and BTC-SPOT are fully supported
+              const isSupported = key.startsWith('GC') || key === 'BTC-SPOT';
+              const isComingSoon = !isSupported;
+
               return (
                 <div
                   key={key}
                   onClick={() => {
-                    onContractChange(key);
-                    setIsOpen(false);
+                    if (!isComingSoon) {
+                      onContractChange(key);
+                      setIsOpen(false);
+                    }
                   }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: 12,
                     padding: '12px 14px',
-                    cursor: 'pointer',
+                    cursor: isComingSoon ? 'not-allowed' : 'pointer',
+                    opacity: isComingSoon ? 0.4 : 1,
                     background: isSelected
                       ? 'linear-gradient(90deg, rgba(0,255,136,0.2) 0%, transparent 100%)'
                       : 'transparent',
@@ -23356,12 +23363,12 @@ const ContractDropdown = ({ selectedContract, onContractChange, contracts, isMob
                     transition: 'all 0.15s ease',
                   }}
                   onMouseEnter={(e) => {
-                    if (!isSelected) {
+                    if (!isSelected && !isComingSoon) {
                       e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
                     }
                   }}
                   onMouseLeave={(e) => {
-                    if (!isSelected) {
+                    if (!isSelected && !isComingSoon) {
                       e.currentTarget.style.background = 'transparent';
                     }
                   }}
@@ -23375,7 +23382,8 @@ const ContractDropdown = ({ selectedContract, onContractChange, contracts, isMob
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: 18
+                    fontSize: 18,
+                    filter: isComingSoon ? 'grayscale(100%)' : 'none'
                   }}>
                     {contract.icon || '📈'}
                   </div>
@@ -23385,13 +23393,29 @@ const ContractDropdown = ({ selectedContract, onContractChange, contracts, isMob
                     <div style={{
                       fontSize: 13,
                       fontWeight: 700,
-                      color: isSelected ? '#00ff88' : '#fff',
+                      color: isSelected ? '#00ff88' : (isComingSoon ? '#555' : '#fff'),
                       fontFamily: "'JetBrains Mono', monospace",
-                      marginBottom: 2
+                      marginBottom: 2,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8
                     }}>
                       {contract.symbol}
+                      {isComingSoon && (
+                        <span style={{
+                          fontSize: 8,
+                          padding: '2px 6px',
+                          background: 'rgba(255,170,0,0.2)',
+                          color: '#ffaa00',
+                          borderRadius: 4,
+                          fontWeight: 600,
+                          letterSpacing: 0.5
+                        }}>
+                          COMING SOON
+                        </span>
+                      )}
                     </div>
-                    <div style={{ fontSize: 10, color: '#888' }}>
+                    <div style={{ fontSize: 10, color: isComingSoon ? '#444' : '#888' }}>
                       {contract.name}
                     </div>
                   </div>
@@ -23778,23 +23802,49 @@ const FloatingFooter = ({ globalData, selectedContract, onContractChange, contra
 // CLAWD BOT TRADE ANALYTICS
 // Deep performance analysis of Clawd bot signals
 // ============================================
-const ClawdAnalytics = () => {
+const ClawdAnalytics = ({ selectedContract }) => {
   const [analytics, setAnalytics] = useState(null);
+  const [comparison, setComparison] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedFilter, setSelectedFilter] = useState('all'); // all, high, medium
+  const [viewMode, setViewMode] = useState('performance'); // performance, comparison
+  const [dateFilter, setDateFilter] = useState('all'); // all, today, 7d, 30d, custom
+  const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
+  const [tradeViewFilter, setTradeViewFilter] = useState('all'); // all, zone_aligned, mid_session
+  const [hoveredTrade, setHoveredTrade] = useState(null);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const { isMobile } = useResponsive();
+
+  // Track mouse position for floating tooltip
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      setMousePos({ x: e.clientX, y: e.clientY });
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
 
   useEffect(() => {
     const fetchAnalytics = async () => {
       try {
-        const res = await fetch(`${API_BASE}/trade-analytics?_t=${Date.now()}`);
-        if (res.ok) {
-          const data = await res.json();
+        // Fetch both analytics and comparison data in parallel
+        const [analyticsRes, comparisonRes] = await Promise.all([
+          fetch(`${API_BASE}/trade-analytics?_t=${Date.now()}`),
+          fetch(`${API_BASE}/zone-clawd-comparison?_t=${Date.now()}`)
+        ]);
+
+        if (analyticsRes.ok) {
+          const data = await analyticsRes.json();
           setAnalytics(data);
           setError(null);
         } else {
           setError('Failed to fetch analytics');
+        }
+
+        if (comparisonRes.ok) {
+          const compData = await comparisonRes.json();
+          setComparison(compData);
         }
       } catch (e) {
         setError('Connection error: ' + e.message);
@@ -23805,7 +23855,7 @@ const ClawdAnalytics = () => {
     fetchAnalytics();
     const interval = setInterval(fetchAnalytics, 30000); // Refresh every 30s
     return () => clearInterval(interval);
-  }, []);
+  }, [selectedContract]); // Refresh when contract changes
 
   if (loading) {
     return (
@@ -23848,7 +23898,48 @@ const ClawdAnalytics = () => {
         <p style={{ color: '#888', fontSize: 14 }}>Deep performance analysis of AI-generated trade signals</p>
       </div>
 
-      {/* Filter Tabs */}
+      {/* View Mode Toggle */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <button
+          onClick={() => setViewMode('performance')}
+          style={{
+            padding: '10px 20px',
+            borderRadius: 8,
+            border: viewMode === 'performance' ? '2px solid #00aaff' : '1px solid rgba(255,255,255,0.1)',
+            background: viewMode === 'performance' ? 'rgba(0,170,255,0.15)' : 'transparent',
+            color: viewMode === 'performance' ? '#00aaff' : '#888',
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          📊 Performance
+        </button>
+        <button
+          onClick={() => setViewMode('comparison')}
+          style={{
+            padding: '10px 20px',
+            borderRadius: 8,
+            border: viewMode === 'comparison' ? '2px solid #9370DB' : '1px solid rgba(255,255,255,0.1)',
+            background: viewMode === 'comparison' ? 'rgba(147,112,219,0.15)' : 'transparent',
+            color: viewMode === 'comparison' ? '#9370DB' : '#888',
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          🎯 Zone vs Clawd
+        </button>
+      </div>
+
+      {/* Filter Tabs - only show in performance view */}
+      {viewMode === 'performance' && (
       <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
         {[
           { id: 'all', label: 'All Signals', count: summary.evaluated },
@@ -23882,7 +23973,772 @@ const ClawdAnalytics = () => {
           </button>
         ))}
       </div>
+      )}
 
+      {/* ============================================ */}
+      {/* ZONE vs CLAWD COMPARISON VIEW */}
+      {/* ============================================ */}
+      {viewMode === 'comparison' && comparison && (
+        <div>
+          {/* Comparison Header */}
+          <div style={{
+            padding: 24,
+            background: 'linear-gradient(135deg, rgba(147,112,219,0.1) 0%, rgba(100,80,180,0.05) 100%)',
+            border: '2px solid rgba(147,112,219,0.3)',
+            borderRadius: 16,
+            marginBottom: 24
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+              <span style={{ fontSize: 28 }}>🎯</span>
+              <h2 style={{ fontSize: 20, fontWeight: 700, color: '#9370DB', margin: 0 }}>Zone Participation vs Clawd Bot</h2>
+            </div>
+            <p style={{ color: '#888', fontSize: 14, marginBottom: 16 }}>
+              1:1 comparison of zone-aligned entries vs overall Clawd performance
+            </p>
+
+            {/* Key Insight Box */}
+            <div style={{
+              padding: 16,
+              background: 'rgba(0,0,0,0.3)',
+              borderRadius: 12,
+              border: '1px solid rgba(255,255,255,0.1)'
+            }}>
+              <div style={{ fontSize: 12, color: '#9370DB', fontWeight: 600, marginBottom: 8 }}>💡 KEY INSIGHT</div>
+              <div style={{ fontSize: 14, color: '#fff' }}>{comparison.insights?.zone_vs_random || 'Analyzing zone alignment...'}</div>
+              <div style={{ fontSize: 12, color: '#888', marginTop: 8 }}>{comparison.insights?.recommendation || ''}</div>
+            </div>
+          </div>
+
+          {/* Date Filter Controls */}
+          <div style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 8,
+            marginBottom: 20,
+            padding: 16,
+            background: 'rgba(255,255,255,0.02)',
+            borderRadius: 12,
+            border: '1px solid rgba(255,255,255,0.08)',
+            alignItems: 'center'
+          }}>
+            <span style={{ fontSize: 12, color: '#888', marginRight: 8 }}>📅 Filter by Date:</span>
+            {[
+              { id: 'all', label: 'All Time' },
+              { id: 'today', label: 'Today' },
+              { id: '7d', label: '7 Days' },
+              { id: '30d', label: '30 Days' },
+              { id: 'custom', label: 'Custom Range' },
+            ].map(filter => (
+              <button
+                key={filter.id}
+                onClick={() => setDateFilter(filter.id)}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 6,
+                  border: dateFilter === filter.id ? '1px solid #9370DB' : '1px solid rgba(255,255,255,0.1)',
+                  background: dateFilter === filter.id ? 'rgba(147,112,219,0.2)' : 'transparent',
+                  color: dateFilter === filter.id ? '#9370DB' : '#888',
+                  fontSize: 12,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                {filter.label}
+              </button>
+            ))}
+            {/* Custom Date Range Inputs */}
+            {dateFilter === 'custom' && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginLeft: 12 }}>
+                <input
+                  type="date"
+                  value={customDateRange.start}
+                  onChange={(e) => setCustomDateRange(prev => ({ ...prev, start: e.target.value }))}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: 6,
+                    border: '1px solid rgba(147,112,219,0.3)',
+                    background: 'rgba(0,0,0,0.3)',
+                    color: '#fff',
+                    fontSize: 12,
+                  }}
+                />
+                <span style={{ color: '#888', fontSize: 12 }}>to</span>
+                <input
+                  type="date"
+                  value={customDateRange.end}
+                  onChange={(e) => setCustomDateRange(prev => ({ ...prev, end: e.target.value }))}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: 6,
+                    border: '1px solid rgba(147,112,219,0.3)',
+                    background: 'rgba(0,0,0,0.3)',
+                    color: '#fff',
+                    fontSize: 12,
+                  }}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Zone Alignment Stats */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+            gap: 24,
+            marginBottom: 24
+          }}>
+            {/* Zone-Aligned Trades */}
+            <div style={{
+              padding: 24,
+              background: 'linear-gradient(135deg, rgba(0,255,136,0.1) 0%, rgba(0,180,100,0.05) 100%)',
+              border: '2px solid rgba(0,255,136,0.3)',
+              borderRadius: 16
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+                <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#00ff88' }} />
+                <span style={{ fontSize: 16, fontWeight: 700, color: '#00ff88' }}>Zone-Aligned Entries</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>TRADES</div>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: '#fff' }}>{comparison.summary?.zone_aligned_trades || 0}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>WIN RATE</div>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: '#00ff88' }}>{comparison.summary?.zone_aligned_win_rate || 0}%</div>
+                </div>
+              </div>
+              <div style={{ marginTop: 16, padding: 12, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
+                <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>Entries within 20pts of zone boundary</div>
+              </div>
+            </div>
+
+            {/* Non Zone-Aligned Trades */}
+            <div style={{
+              padding: 24,
+              background: 'linear-gradient(135deg, rgba(255,170,0,0.1) 0%, rgba(200,130,0,0.05) 100%)',
+              border: '2px solid rgba(255,170,0,0.3)',
+              borderRadius: 16
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+                <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#ffaa00' }} />
+                <span style={{ fontSize: 16, fontWeight: 700, color: '#ffaa00' }}>Mid-Session Entries</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>TRADES</div>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: '#fff' }}>{comparison.summary?.zone_misaligned_trades || 0}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>WIN RATE</div>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: '#ffaa00' }}>{comparison.summary?.zone_misaligned_win_rate || 0}%</div>
+                </div>
+              </div>
+              <div style={{ marginTop: 16, padding: 12, background: 'rgba(0,0,0,0.2)', borderRadius: 8 }}>
+                <div style={{ fontSize: 11, color: '#666', marginBottom: 4 }}>Entries not aligned with zone boundaries</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Win Rate Advantage */}
+          {comparison.summary && (
+            <div style={{
+              padding: 20,
+              background: comparison.summary.win_rate_advantage > 0 ? 'rgba(0,255,136,0.08)' : 'rgba(255,68,102,0.08)',
+              border: `2px solid ${comparison.summary.win_rate_advantage > 0 ? 'rgba(0,255,136,0.3)' : 'rgba(255,68,102,0.3)'}`,
+              borderRadius: 12,
+              textAlign: 'center',
+              marginBottom: 24
+            }}>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>ZONE ALIGNMENT ADVANTAGE</div>
+              <div style={{ fontSize: 40, fontWeight: 700, color: comparison.summary.win_rate_advantage > 0 ? '#00ff88' : '#ff4466' }}>
+                {comparison.summary.win_rate_advantage > 0 ? '+' : ''}{comparison.summary.win_rate_advantage}%
+              </div>
+              <div style={{ fontSize: 13, color: '#888', marginTop: 8 }}>
+                {comparison.summary.win_rate_advantage > 0
+                  ? 'Zone-aligned entries outperform mid-session entries'
+                  : 'Mid-session entries currently performing better'}
+              </div>
+            </div>
+          )}
+
+          {/* Entry Accuracy Breakdown */}
+          {comparison.entry_accuracy && (
+            <div style={{
+              padding: 24,
+              background: 'rgba(0,170,255,0.05)',
+              border: '1px solid rgba(0,170,255,0.2)',
+              borderRadius: 16,
+              marginBottom: 24
+            }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#00aaff', marginBottom: 16 }}>🎯 Entry Accuracy Analysis</div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: 16 }}>
+                <div style={{ textAlign: 'center', padding: 16, background: 'rgba(0,255,136,0.1)', borderRadius: 8 }}>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: '#00ff88' }}>{comparison.entry_accuracy.within_5pts || 0}</div>
+                  <div style={{ fontSize: 11, color: '#888' }}>Within 5 pts</div>
+                </div>
+                <div style={{ textAlign: 'center', padding: 16, background: 'rgba(0,200,200,0.1)', borderRadius: 8 }}>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: '#00cccc' }}>{comparison.entry_accuracy.within_10pts || 0}</div>
+                  <div style={{ fontSize: 11, color: '#888' }}>Within 10 pts</div>
+                </div>
+                <div style={{ textAlign: 'center', padding: 16, background: 'rgba(255,170,0,0.1)', borderRadius: 8 }}>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: '#ffaa00' }}>{comparison.entry_accuracy.within_20pts || 0}</div>
+                  <div style={{ fontSize: 11, color: '#888' }}>Within 20 pts</div>
+                </div>
+                <div style={{ textAlign: 'center', padding: 16, background: 'rgba(255,68,102,0.1)', borderRadius: 8 }}>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: '#ff4466' }}>{comparison.entry_accuracy.missed || 0}</div>
+                  <div style={{ fontSize: 11, color: '#888' }}>Missed Zone</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Session Performance Breakdown */}
+          {comparison.by_session && Object.keys(comparison.by_session).length > 0 && (
+            <div style={{
+              padding: 24,
+              background: 'rgba(255,255,255,0.02)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 16,
+              marginBottom: 24
+            }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', marginBottom: 16 }}>📅 Performance by Session</div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: 12 }}>
+                {Object.entries(comparison.by_session).map(([session, stats]) => (
+                  <div key={session} style={{
+                    padding: 16,
+                    background: 'rgba(0,0,0,0.3)',
+                    borderRadius: 8,
+                    border: `1px solid ${stats.pnl >= 0 ? 'rgba(0,255,136,0.2)' : 'rgba(255,68,102,0.2)'}`
+                  }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#00aaff', marginBottom: 8 }}>{session}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, color: '#888' }}>Trades</span>
+                      <span style={{ fontSize: 12, color: '#fff' }}>{stats.total}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, color: '#888' }}>Win Rate</span>
+                      <span style={{ fontSize: 12, color: stats.win_rate >= 50 ? '#00ff88' : '#ff4466' }}>{stats.win_rate}%</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 11, color: '#888' }}>P&L</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: stats.pnl >= 0 ? '#00ff88' : '#ff4466' }}>
+                        ${stats.pnl?.toLocaleString() || 0}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Best/Worst Session Insights */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+            gap: 16,
+            marginBottom: 24
+          }}>
+            <div style={{
+              padding: 20,
+              background: 'rgba(0,255,136,0.05)',
+              border: '1px solid rgba(0,255,136,0.2)',
+              borderRadius: 12
+            }}>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>🏆 BEST SESSION</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#00ff88' }}>{comparison.insights?.best_session || 'N/A'}</div>
+            </div>
+            <div style={{
+              padding: 20,
+              background: 'rgba(255,68,102,0.05)',
+              border: '1px solid rgba(255,68,102,0.2)',
+              borderRadius: 12
+            }}>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>⚠️ NEEDS IMPROVEMENT</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#ff4466' }}>{comparison.insights?.worst_session || 'N/A'}</div>
+            </div>
+          </div>
+
+          {/* ============================================ */}
+          {/* TRADE ENTRIES VISUALIZATION */}
+          {/* ============================================ */}
+          {comparison.trades && comparison.trades.length > 0 && (
+            <div style={{
+              padding: 24,
+              background: 'rgba(255,255,255,0.02)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 16,
+              marginBottom: 24
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 20 }}>📊</span>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>Trade Entries Comparison</span>
+                  <span style={{ fontSize: 12, color: '#888' }}>({comparison.trades.length} trades)</span>
+                </div>
+                {/* Trade Type Filter */}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {[
+                    { id: 'all', label: 'All', color: '#00aaff' },
+                    { id: 'zone_aligned', label: 'Zone-Aligned', color: '#00ff88' },
+                    { id: 'mid_session', label: 'Mid-Session', color: '#ffaa00' },
+                  ].map(filter => (
+                    <button
+                      key={filter.id}
+                      onClick={() => setTradeViewFilter(filter.id)}
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: 4,
+                        border: tradeViewFilter === filter.id ? `1px solid ${filter.color}` : '1px solid rgba(255,255,255,0.1)',
+                        background: tradeViewFilter === filter.id ? `${filter.color}20` : 'transparent',
+                        color: tradeViewFilter === filter.id ? filter.color : '#666',
+                        fontSize: 11,
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {filter.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Trades List */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 400, overflowY: 'auto' }}>
+                {comparison.trades
+                  .filter(trade => {
+                    // Apply trade type filter
+                    if (tradeViewFilter === 'zone_aligned' && !trade.zone_aligned) return false;
+                    if (tradeViewFilter === 'mid_session' && trade.zone_aligned) return false;
+                    // Apply date filter
+                    if (dateFilter !== 'all' && trade.timestamp) {
+                      const tradeDate = new Date(trade.timestamp);
+                      const now = new Date();
+                      if (dateFilter === 'today') {
+                        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                        if (tradeDate < today) return false;
+                      } else if (dateFilter === '7d') {
+                        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                        if (tradeDate < weekAgo) return false;
+                      } else if (dateFilter === '30d') {
+                        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                        if (tradeDate < monthAgo) return false;
+                      } else if (dateFilter === 'custom') {
+                        if (customDateRange.start) {
+                          const startDate = new Date(customDateRange.start);
+                          if (tradeDate < startDate) return false;
+                        }
+                        if (customDateRange.end) {
+                          const endDate = new Date(customDateRange.end);
+                          endDate.setHours(23, 59, 59, 999);
+                          if (tradeDate > endDate) return false;
+                        }
+                      }
+                    }
+                    return true;
+                  })
+                  .map((trade, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: 16,
+                        background: trade.zone_aligned ? 'rgba(0,255,136,0.05)' : 'rgba(255,170,0,0.05)',
+                        border: `1px solid ${trade.zone_aligned ? 'rgba(0,255,136,0.2)' : 'rgba(255,170,0,0.2)'}`,
+                        borderRadius: 12,
+                        position: 'relative',
+                        cursor: 'pointer',
+                      }}
+                      onMouseEnter={() => setHoveredTrade(idx)}
+                      onMouseLeave={() => setHoveredTrade(null)}
+                    >
+                      {/* Trade Header */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{
+                            fontSize: 14,
+                            padding: '2px 8px',
+                            borderRadius: 4,
+                            background: trade.direction === 'LONG' ? 'rgba(0,200,100,0.2)' : 'rgba(255,100,100,0.2)',
+                            color: trade.direction === 'LONG' ? '#00cc66' : '#ff6666',
+                            fontWeight: 600
+                          }}>
+                            {trade.direction === 'LONG' ? '📈' : '📉'} {trade.direction}
+                          </span>
+                          <span style={{ fontSize: 12, color: '#888' }}>{trade.signal_time}</span>
+                          <span style={{
+                            fontSize: 10,
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            background: trade.zone_aligned ? 'rgba(0,255,136,0.2)' : 'rgba(255,170,0,0.2)',
+                            color: trade.zone_aligned ? '#00ff88' : '#ffaa00'
+                          }}>
+                            {trade.zone_aligned ? '🎯 Zone-Aligned' : '⚡ Mid-Session'}
+                          </span>
+                        </div>
+                        <div style={{
+                          padding: '4px 12px',
+                          borderRadius: 6,
+                          background: trade.result === 'WIN' ? 'rgba(0,255,136,0.2)' : 'rgba(255,68,102,0.2)',
+                          color: trade.result === 'WIN' ? '#00ff88' : '#ff4466',
+                          fontWeight: 700,
+                          fontSize: 13
+                        }}>
+                          {trade.result} {trade.pnl_dollars >= 0 ? '+' : ''}${trade.pnl_dollars?.toLocaleString() || 0}
+                        </div>
+                      </div>
+
+                      {/* Entry/SL/TP Row */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 8 }}>
+                        <div style={{ textAlign: 'center', padding: 8, background: 'rgba(0,170,255,0.1)', borderRadius: 6 }}>
+                          <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>ENTRY</div>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: '#00aaff' }}>${trade.entry_price?.toFixed(2)}</div>
+                        </div>
+                        <div style={{ textAlign: 'center', padding: 8, background: 'rgba(255,68,102,0.1)', borderRadius: 6 }}>
+                          <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>STOP LOSS</div>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: '#ff4466' }}>${trade.stop?.toFixed(2)}</div>
+                        </div>
+                        <div style={{ textAlign: 'center', padding: 8, background: 'rgba(0,255,136,0.1)', borderRadius: 6 }}>
+                          <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>T1</div>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: trade.t1_hit ? '#00ff88' : '#666' }}>
+                            ${trade.targets?.[0]?.toFixed(2) || '-'}
+                            {trade.t1_hit && <span style={{ marginLeft: 4, fontSize: 10 }}>✓</span>}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'center', padding: 8, background: 'rgba(0,255,136,0.08)', borderRadius: 6 }}>
+                          <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>T2</div>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: trade.t2_hit ? '#00ff88' : '#666' }}>
+                            ${trade.targets?.[1]?.toFixed(2) || '-'}
+                            {trade.t2_hit && <span style={{ marginLeft: 4, fontSize: 10 }}>✓</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Zone Info */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, color: '#666' }}>
+                        <span>
+                          {trade.closest_zone ? `📍 ${trade.closest_zone}` : '📍 No zone nearby'}
+                          {trade.entry_distance_from_zone !== undefined && ` (${trade.entry_distance_from_zone}pts away)`}
+                        </span>
+                        <span>MAE: {trade.mae}pts | MFE: {trade.mfe}pts | R:R {trade.rr?.toFixed(1)}:1</span>
+                      </div>
+
+                    </div>
+                  ))}
+              </div>
+
+              {/* Floating Cursor Tooltip */}
+              {hoveredTrade !== null && comparison.trades[hoveredTrade] && ReactDOM.createPortal(
+                <div style={{
+                  position: 'fixed',
+                  left: mousePos.x + 20,
+                  top: mousePos.y - 100,
+                  zIndex: 99999,
+                  padding: 20,
+                  background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+                  border: '2px solid rgba(147,112,219,0.5)',
+                  borderRadius: 16,
+                  boxShadow: '0 12px 48px rgba(0,0,0,0.8), 0 0 20px rgba(147,112,219,0.2)',
+                  minWidth: 340,
+                  maxWidth: 400,
+                  pointerEvents: 'none',
+                }}>
+                  {(() => {
+                    const trade = comparison.trades[hoveredTrade];
+                    const entryBasis = trade.zone_aligned
+                      ? `Entry at ${trade.closest_zone} zone (${trade.entry_distance_from_zone}pts from level)`
+                      : `Mid-session entry based on momentum/structure`;
+                    const stopBasis = trade.direction === 'LONG'
+                      ? `Stop below ${trade.closest_zone || 'session support'} (-${Math.abs(trade.entry_price - trade.stop).toFixed(1)}pts risk)`
+                      : `Stop above ${trade.closest_zone || 'session resistance'} (-${Math.abs(trade.entry_price - trade.stop).toFixed(1)}pts risk)`;
+                    const t1Basis = `T1: 1R target (+${Math.abs(trade.targets?.[0] - trade.entry_price).toFixed(1)}pts)`;
+                    const t2Basis = trade.targets?.[1] ? `T2: 2R extension (+${Math.abs(trade.targets?.[1] - trade.entry_price).toFixed(1)}pts)` : null;
+                    const t3Basis = trade.targets?.[2] ? `T3: Runner target (+${Math.abs(trade.targets?.[2] - trade.entry_price).toFixed(1)}pts)` : null;
+
+                    return (
+                      <>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                          <span style={{ fontSize: 18 }}>📋</span>
+                          <span style={{ fontSize: 15, fontWeight: 700, color: '#9370DB' }}>Trade Strategy Details</span>
+                          <span style={{
+                            marginLeft: 'auto',
+                            padding: '3px 10px',
+                            borderRadius: 6,
+                            background: trade.result === 'WIN' ? 'rgba(0,255,136,0.2)' : 'rgba(255,68,102,0.2)',
+                            color: trade.result === 'WIN' ? '#00ff88' : '#ff4466',
+                            fontWeight: 700,
+                            fontSize: 12
+                          }}>
+                            {trade.result}
+                          </span>
+                        </div>
+
+                        {/* Entry Section */}
+                        <div style={{ marginBottom: 14, padding: 12, background: 'rgba(0,170,255,0.1)', borderRadius: 10, border: '1px solid rgba(0,170,255,0.2)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <span style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>ENTRY IDEA</span>
+                            <span style={{ fontSize: 16, fontWeight: 700, color: '#00aaff' }}>${trade.entry_price?.toFixed(2)}</span>
+                          </div>
+                          <div style={{ fontSize: 11, color: '#aaa', lineHeight: 1.4 }}>
+                            📍 {entryBasis}
+                          </div>
+                        </div>
+
+                        {/* Stop Loss Section */}
+                        <div style={{ marginBottom: 14, padding: 12, background: 'rgba(255,68,102,0.1)', borderRadius: 10, border: '1px solid rgba(255,68,102,0.2)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <span style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>STOP LOSS</span>
+                            <span style={{ fontSize: 16, fontWeight: 700, color: '#ff4466' }}>${trade.stop?.toFixed(2)}</span>
+                          </div>
+                          <div style={{ fontSize: 11, color: '#aaa', lineHeight: 1.4 }}>
+                            🛡️ {stopBasis}
+                          </div>
+                        </div>
+
+                        {/* Targets Section */}
+                        <div style={{ marginBottom: 14, padding: 12, background: 'rgba(0,255,136,0.08)', borderRadius: 10, border: '1px solid rgba(0,255,136,0.2)' }}>
+                          <div style={{ fontSize: 11, color: '#888', fontWeight: 600, marginBottom: 10 }}>TARGET LEVELS</div>
+                          <div style={{ display: 'grid', gap: 8 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: 12, color: trade.t1_hit ? '#00ff88' : '#888' }}>
+                                🎯 {t1Basis}
+                              </span>
+                              <span style={{ fontSize: 14, fontWeight: 600, color: trade.t1_hit ? '#00ff88' : '#666' }}>
+                                ${trade.targets?.[0]?.toFixed(2)} {trade.t1_hit && '✅'}
+                              </span>
+                            </div>
+                            {t2Basis && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontSize: 12, color: trade.t2_hit ? '#00ff88' : '#888' }}>
+                                  🎯 {t2Basis}
+                                </span>
+                                <span style={{ fontSize: 14, fontWeight: 600, color: trade.t2_hit ? '#00ff88' : '#666' }}>
+                                  ${trade.targets?.[1]?.toFixed(2)} {trade.t2_hit && '✅'}
+                                </span>
+                              </div>
+                            )}
+                            {t3Basis && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontSize: 12, color: trade.t3_hit ? '#00ff88' : '#888' }}>
+                                  🎯 {t3Basis}
+                                </span>
+                                <span style={{ fontSize: 14, fontWeight: 600, color: trade.t3_hit ? '#00ff88' : '#666' }}>
+                                  ${trade.targets?.[2]?.toFixed(2)} {trade.t3_hit && '✅'}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Performance Stats */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                          <div style={{ textAlign: 'center', padding: 8, background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
+                            <div style={{ fontSize: 10, color: '#666' }}>Session</div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: '#00aaff' }}>{trade.session || 'N/A'}</div>
+                          </div>
+                          <div style={{ textAlign: 'center', padding: 8, background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
+                            <div style={{ fontSize: 10, color: '#666' }}>Confidence</div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: trade.confidence === 'HIGH' ? '#00ff88' : '#ffaa00' }}>{trade.confidence}</div>
+                          </div>
+                          <div style={{ textAlign: 'center', padding: 8, background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
+                            <div style={{ fontSize: 10, color: '#666' }}>R:R Achieved</div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>{trade.rr?.toFixed(1)}:1</div>
+                          </div>
+                        </div>
+
+                        {/* Zone vs Clawd Comparison */}
+                        <div style={{ marginTop: 14, padding: 10, background: 'rgba(147,112,219,0.1)', borderRadius: 8, border: '1px solid rgba(147,112,219,0.2)' }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: '#9370DB', marginBottom: 6 }}>
+                            {trade.zone_aligned ? '🎯 ZONE PARTICIPATION' : '⚡ CLAWD BOT'} STRATEGY
+                          </div>
+                          <div style={{ fontSize: 11, color: '#aaa' }}>
+                            {trade.zone_aligned
+                              ? `Entry at key zone level (${trade.closest_zone}). Zone Participation method seeks entries at session/PD boundaries for optimal R:R.`
+                              : `Momentum-based entry from Clawd Bot signal. Entry based on price action and structure analysis.`
+                            }
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>,
+                document.body
+              )}
+            </div>
+          )}
+
+          {/* ============================================ */}
+          {/* ACCURACY TRENDS ANALYSIS */}
+          {/* ============================================ */}
+          {comparison.trades && comparison.trades.length > 0 && (() => {
+            // Calculate accuracy trends for highest performance scenarios
+            const trades = comparison.trades;
+
+            // Zone-aligned performance by session
+            const zoneAlignedBySession = {};
+            const midSessionBySession = {};
+
+            trades.forEach(t => {
+              const bucket = t.zone_aligned ? zoneAlignedBySession : midSessionBySession;
+              if (!bucket[t.session]) bucket[t.session] = { wins: 0, losses: 0, pnl: 0 };
+              if (t.result === 'WIN') bucket[t.session].wins++;
+              else bucket[t.session].losses++;
+              bucket[t.session].pnl += t.pnl_dollars || 0;
+            });
+
+            // Find best performing scenarios
+            const scenarios = [];
+            Object.entries(zoneAlignedBySession).forEach(([session, stats]) => {
+              const total = stats.wins + stats.losses;
+              if (total >= 2) {
+                scenarios.push({
+                  type: 'Zone-Aligned',
+                  session,
+                  winRate: Math.round(stats.wins / total * 100),
+                  trades: total,
+                  pnl: stats.pnl,
+                  color: '#00ff88'
+                });
+              }
+            });
+            Object.entries(midSessionBySession).forEach(([session, stats]) => {
+              const total = stats.wins + stats.losses;
+              if (total >= 2) {
+                scenarios.push({
+                  type: 'Mid-Session',
+                  session,
+                  winRate: Math.round(stats.wins / total * 100),
+                  trades: total,
+                  pnl: stats.pnl,
+                  color: '#ffaa00'
+                });
+              }
+            });
+
+            // Sort by win rate
+            scenarios.sort((a, b) => b.winRate - a.winRate);
+            const topScenarios = scenarios.slice(0, 5);
+            const bottomScenarios = scenarios.slice(-3).reverse();
+
+            return (
+              <div style={{
+                padding: 24,
+                background: 'linear-gradient(135deg, rgba(147,112,219,0.08) 0%, rgba(100,80,180,0.02) 100%)',
+                border: '1px solid rgba(147,112,219,0.2)',
+                borderRadius: 16,
+                marginBottom: 24
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+                  <span style={{ fontSize: 20 }}>📈</span>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: '#9370DB' }}>Accuracy Trends Analysis</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 24 }}>
+                  {/* Best Performing Scenarios */}
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#00ff88', marginBottom: 12 }}>🏆 Highest Win Rate Scenarios</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {topScenarios.map((s, i) => (
+                        <div key={i} style={{
+                          padding: 12,
+                          background: 'rgba(0,255,136,0.08)',
+                          border: '1px solid rgba(0,255,136,0.2)',
+                          borderRadius: 8,
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}>
+                          <div>
+                            <span style={{ color: s.color, fontWeight: 600, fontSize: 12 }}>{s.type}</span>
+                            <span style={{ color: '#888', fontSize: 12 }}> + </span>
+                            <span style={{ color: '#00aaff', fontWeight: 500, fontSize: 12 }}>{s.session}</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <span style={{ color: '#00ff88', fontWeight: 700, fontSize: 14 }}>{s.winRate}%</span>
+                            <span style={{ color: '#666', fontSize: 11 }}>({s.trades} trades)</span>
+                            <span style={{
+                              color: s.pnl >= 0 ? '#00ff88' : '#ff4466',
+                              fontWeight: 600,
+                              fontSize: 12
+                            }}>
+                              {s.pnl >= 0 ? '+' : ''}${s.pnl.toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                      {topScenarios.length === 0 && (
+                        <div style={{ color: '#666', fontSize: 12, padding: 12 }}>Need more trade data to analyze trends</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Worst Performing Scenarios */}
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#ff4466', marginBottom: 12 }}>⚠️ Lowest Win Rate Scenarios</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {bottomScenarios.map((s, i) => (
+                        <div key={i} style={{
+                          padding: 12,
+                          background: 'rgba(255,68,102,0.08)',
+                          border: '1px solid rgba(255,68,102,0.2)',
+                          borderRadius: 8,
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
+                        }}>
+                          <div>
+                            <span style={{ color: s.color, fontWeight: 600, fontSize: 12 }}>{s.type}</span>
+                            <span style={{ color: '#888', fontSize: 12 }}> + </span>
+                            <span style={{ color: '#00aaff', fontWeight: 500, fontSize: 12 }}>{s.session}</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <span style={{ color: '#ff4466', fontWeight: 700, fontSize: 14 }}>{s.winRate}%</span>
+                            <span style={{ color: '#666', fontSize: 11 }}>({s.trades} trades)</span>
+                            <span style={{
+                              color: s.pnl >= 0 ? '#00ff88' : '#ff4466',
+                              fontWeight: 600,
+                              fontSize: 12
+                            }}>
+                              {s.pnl >= 0 ? '+' : ''}${s.pnl.toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                      {bottomScenarios.length === 0 && (
+                        <div style={{ color: '#666', fontSize: 12, padding: 12 }}>Need more trade data to analyze trends</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Recommendation based on trends */}
+                {topScenarios.length > 0 && (
+                  <div style={{
+                    marginTop: 20,
+                    padding: 16,
+                    background: 'rgba(0,0,0,0.3)',
+                    borderRadius: 12,
+                    border: '1px solid rgba(147,112,219,0.2)'
+                  }}>
+                    <div style={{ fontSize: 12, color: '#9370DB', fontWeight: 600, marginBottom: 8 }}>💡 TREND RECOMMENDATION</div>
+                    <div style={{ fontSize: 13, color: '#fff' }}>
+                      Focus on <span style={{ color: topScenarios[0]?.color, fontWeight: 600 }}>{topScenarios[0]?.type}</span> entries during <span style={{ color: '#00aaff', fontWeight: 600 }}>{topScenarios[0]?.session}</span> session for highest probability setups ({topScenarios[0]?.winRate}% win rate).
+                      {bottomScenarios.length > 0 && bottomScenarios[0]?.winRate < 40 && (
+                        <span> Avoid <span style={{ color: '#ff4466' }}>{bottomScenarios[0]?.type} + {bottomScenarios[0]?.session}</span> ({bottomScenarios[0]?.winRate}% WR).</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* ============================================ */}
+      {/* PERFORMANCE VIEW (Original Content) */}
+      {/* ============================================ */}
+      {viewMode === 'performance' && (
+      <>
       {/* Summary Stats Grid */}
       <div style={{
         display: 'grid',
@@ -24245,6 +25101,8 @@ const ClawdAnalytics = () => {
           <div>• Max drawdown: <strong style={{ color: '#ff4466' }}>${drawdown.max_mae_dollars?.toLocaleString()}</strong> - worst case scenario</div>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 };
@@ -24798,7 +25656,7 @@ const App = () => {
             {activeTab === 'live' && <LiveDashboard settings={settings} onSettingsChange={setSettings} />}
             {activeTab === 'tpo' && <MarketProfile selectedContract={selectedContract} />}
             {activeTab === 'zones' && <ZoneParticipation />}
-            {activeTab === 'clawd' && <ClawdAnalytics />}
+            {activeTab === 'clawd' && <ClawdAnalytics selectedContract={selectedContract} />}
             {activeTab === 'treemap' && <CorrelationMatrix />}
             {activeTab === 'vsi' && <VSIAnalysis selectedContract={selectedContract} />}
             {activeTab === 'trades' && <TradeLog trades={allTrades} dateRange={dateRange} />}
