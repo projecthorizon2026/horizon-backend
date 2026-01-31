@@ -379,21 +379,33 @@ def generate_btc_backtest_from_zones(start_date='2025-01-30'):
     import requests
 
     try:
-        # Fetch BTC historical data from CoinGecko (free, no API key needed)
+        # Fetch BTC historical data
         start_dt = datetime.strptime(start_date, '%Y-%m-%d')
         days_back = (datetime.now() - start_dt).days + 1
 
-        url = f"https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days={days_back}&interval=hourly"
-        resp = requests.get(url, timeout=30)
+        # Try CryptoCompare first (more reliable from cloud)
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        url = f"https://min-api.cryptocompare.com/data/v2/histohour?fsym=BTC&tsym=USD&limit={min(days_back * 24, 2000)}"
+        resp = requests.get(url, headers=headers, timeout=30)
 
-        if resp.status_code != 200:
-            return {'error': f'Failed to fetch BTC data: {resp.status_code}'}
-
-        data = resp.json()
-        prices = data.get('prices', [])
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get('Response') == 'Success':
+                raw_prices = data.get('Data', {}).get('Data', [])
+                prices = [[p['time'] * 1000, p['close']] for p in raw_prices if p.get('close')]
+            else:
+                prices = []
+        else:
+            # Fallback to CoinGecko with proper headers
+            url = f"https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days={days_back}&interval=hourly"
+            resp = requests.get(url, headers=headers, timeout=30)
+            if resp.status_code != 200:
+                return {'error': f'Failed to fetch BTC data: {resp.status_code}'}
+            data = resp.json()
+            prices = data.get('prices', [])
 
         if not prices:
-            return {'error': 'No price data returned'}
+            return {'error': 'No price data returned from APIs'}
 
         # Generate zone-based entries
         backtest_trades = []
