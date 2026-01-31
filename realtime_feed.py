@@ -5813,6 +5813,209 @@ deribit_options_cache = {
 }
 
 # =============================================================================
+# ICEBERG ORDER DETECTION
+# =============================================================================
+iceberg_cache = {
+    'data': [],
+    'timestamp': 0,
+    'ttl': 30  # Refresh every 30 seconds
+}
+
+def detect_iceberg_orders():
+    """Detect potential iceberg orders from trade patterns and order book.
+
+    Iceberg orders are large institutional orders broken into smaller pieces.
+    Detection methods:
+    1. Repeated fills at same price (order regeneration)
+    2. Large bid/ask walls that persist after partial fills
+    3. Abnormal trade clustering at specific price levels
+    """
+    global iceberg_cache
+
+    now = time.time()
+    if iceberg_cache['data'] and (now - iceberg_cache['timestamp']) < iceberg_cache['ttl']:
+        return iceberg_cache['data']
+
+    icebergs = []
+
+    try:
+        import urllib.request
+        import ssl
+
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        current_price = state.get('price', 84000)
+
+        # Method 1: Analyze Binance recent trades for iceberg patterns
+        try:
+            url = "https://api.binance.com/api/v3/trades?symbol=BTCUSDT&limit=1000"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
+                trades = json.loads(response.read().decode())
+
+                # Group trades by price level (round to nearest $10)
+                price_clusters = {}
+                for trade in trades:
+                    price = round(float(trade['price']) / 10) * 10  # Round to $10
+                    qty = float(trade['qty'])
+                    is_buyer = trade['isBuyerMaker']
+
+                    if price not in price_clusters:
+                        price_clusters[price] = {
+                            'buy_count': 0, 'sell_count': 0,
+                            'buy_vol': 0, 'sell_vol': 0,
+                            'trades': []
+                        }
+
+                    if is_buyer:
+                        price_clusters[price]['sell_count'] += 1
+                        price_clusters[price]['sell_vol'] += qty
+                    else:
+                        price_clusters[price]['buy_count'] += 1
+                        price_clusters[price]['buy_vol'] += qty
+
+                    price_clusters[price]['trades'].append({
+                        'qty': qty,
+                        'time': trade['time'],
+                        'side': 'SELL' if is_buyer else 'BUY'
+                    })
+
+                # Detect iceberg patterns: many trades at same price with similar sizes
+                for price, cluster in price_clusters.items():
+                    total_trades = cluster['buy_count'] + cluster['sell_count']
+                    total_vol = cluster['buy_vol'] + cluster['sell_vol']
+
+                    # Iceberg signature: 10+ trades at same price with total vol > 1 BTC
+                    if total_trades >= 10 and total_vol >= 1:
+                        avg_size = total_vol / total_trades
+
+                        # Check for consistent trade sizes (iceberg characteristic)
+                        sizes = [t['qty'] for t in cluster['trades']]
+                        if sizes:
+                            size_variance = sum((s - avg_size)**2 for s in sizes) / len(sizes)
+                            size_std = size_variance ** 0.5
+
+                            # Low variance = likely iceberg (consistent chunk sizes)
+                            if size_std < avg_size * 0.5:  # Std dev < 50% of mean
+                                side = 'BUY' if cluster['buy_vol'] > cluster['sell_vol'] else 'SELL'
+                                icebergs.append({
+                                    'price': price,
+                                    'total_btc': round(total_vol, 4),
+                                    'total_usd': round(total_vol * price, 0),
+                                    'trade_count': total_trades,
+                                    'avg_chunk': round(avg_size, 4),
+                                    'side': side,
+                                    'confidence': 'HIGH' if total_trades >= 20 else 'MEDIUM',
+                                    'type': 'ICEBERG',
+                                    'distance_pct': round((price - current_price) / current_price * 100, 2)
+                                })
+        except Exception as e:
+            print(f"⚠️ Binance iceberg detection failed: {e}")
+
+        # Method 2: Coinbase order book for large persistent levels
+        try:
+            url = "https://api.exchange.coinbase.com/products/BTC-USD/book?level=2"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, context=ctx, timeout=10) as response:
+                book = json.loads(response.read().decode())
+
+                # Check for suspiciously large orders (potential icebergs showing tip)
+                for bid in book.get('bids', [])[:30]:
+                    price, size = float(bid[0]), float(bid[1])
+                    if size >= 5:  # 5+ BTC bid - possible iceberg tip
+                        icebergs.append({
+                            'price': price,
+                            'total_btc': round(size, 4),
+                            'total_usd': round(size * price, 0),
+                            'trade_count': 1,
+                            'avg_chunk': round(size, 4),
+                            'side': 'BUY',
+                            'confidence': 'LOW',
+                            'type': 'LARGE_BID',
+                            'distance_pct': round((price - current_price) / current_price * 100, 2)
+                        })
+
+                for ask in book.get('asks', [])[:30]:
+                    price, size = float(ask[0]), float(ask[1])
+                    if size >= 5:  # 5+ BTC ask - possible iceberg tip
+                        icebergs.append({
+                            'price': price,
+                            'total_btc': round(size, 4),
+                            'total_usd': round(size * price, 0),
+                            'trade_count': 1,
+                            'avg_chunk': round(size, 4),
+                            'side': 'SELL',
+                            'confidence': 'LOW',
+                            'type': 'LARGE_ASK',
+                            'distance_pct': round((price - current_price) / current_price * 100, 2)
+                        })
+        except Exception as e:
+            print(f"⚠️ Coinbase iceberg detection failed: {e}")
+
+        # Sort by confidence and volume
+        icebergs.sort(key=lambda x: (x['confidence'] == 'HIGH', x['total_btc']), reverse=True)
+        icebergs = icebergs[:15]  # Keep top 15
+
+        iceberg_cache['data'] = icebergs
+        iceberg_cache['timestamp'] = now
+
+        if icebergs:
+            high_conf = sum(1 for i in icebergs if i['confidence'] == 'HIGH')
+            print(f"🧊 Iceberg detector: {len(icebergs)} potential icebergs ({high_conf} high confidence)")
+
+    except Exception as e:
+        print(f"❌ Iceberg detection error: {e}")
+
+    return icebergs
+
+
+def get_iceberg_summary():
+    """Summarize iceberg order activity."""
+    icebergs = detect_iceberg_orders()
+
+    if not icebergs:
+        return {
+            'total_icebergs': 0,
+            'buy_icebergs': 0,
+            'sell_icebergs': 0,
+            'total_btc': 0,
+            'dominant_side': 'NEUTRAL',
+            'nearest_buy': None,
+            'nearest_sell': None
+        }
+
+    buy_icebergs = [i for i in icebergs if i['side'] == 'BUY']
+    sell_icebergs = [i for i in icebergs if i['side'] == 'SELL']
+
+    buy_btc = sum(i['total_btc'] for i in buy_icebergs)
+    sell_btc = sum(i['total_btc'] for i in sell_icebergs)
+
+    dominant = 'NEUTRAL'
+    if buy_btc > sell_btc * 1.5:
+        dominant = 'BULLISH'
+    elif sell_btc > buy_btc * 1.5:
+        dominant = 'BEARISH'
+
+    # Find nearest icebergs to current price
+    nearest_buy = min(buy_icebergs, key=lambda x: abs(x['distance_pct']), default=None)
+    nearest_sell = min(sell_icebergs, key=lambda x: abs(x['distance_pct']), default=None)
+
+    return {
+        'total_icebergs': len(icebergs),
+        'buy_icebergs': len(buy_icebergs),
+        'sell_icebergs': len(sell_icebergs),
+        'buy_btc': round(buy_btc, 2),
+        'sell_btc': round(sell_btc, 2),
+        'dominant_side': dominant,
+        'nearest_buy': nearest_buy,
+        'nearest_sell': nearest_sell,
+        'high_confidence': sum(1 for i in icebergs if i['confidence'] == 'HIGH')
+    }
+
+
+# =============================================================================
 # WHALE ALERT TRACKER (FOR BTC SPOT)
 # =============================================================================
 whale_transactions_cache = {
@@ -11016,6 +11219,17 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(whale_data).encode())
             return
 
+        # Iceberg Order Detection (BTC)
+        if path == '/icebergs':
+            iceberg_data = {
+                'icebergs': detect_iceberg_orders(),
+                'summary': get_iceberg_summary(),
+                'timestamp': datetime.now().isoformat(),
+                'note': 'Potential iceberg orders detected from trade patterns and order book'
+            }
+            self.wfile.write(json.dumps(iceberg_data).encode())
+            return
+
         # BTC Options with Enhanced Gamma (HIRO-like)
         if path == '/btc-gamma':
             options_raw = fetch_deribit_options()
@@ -11363,6 +11577,10 @@ class LiveDataHandler(BaseHTTPRequestHandler):
             # Whale Transactions (for BTC-SPOT mode)
             'whale_transactions': fetch_whale_transactions() if s.get('asset_class') == 'BTC-SPOT' else [],
             'whale_summary': get_whale_summary() if s.get('asset_class') == 'BTC-SPOT' else None,
+
+            # Iceberg Order Detection (for BTC modes)
+            'icebergs': detect_iceberg_orders() if 'BTC' in s.get('asset_class', '') else [],
+            'iceberg_summary': get_iceberg_summary() if 'BTC' in s.get('asset_class', '') else None,
 
             # BTC Options Data (from Deribit - for futures or enhanced spot analysis)
             'btc_options': fetch_deribit_options().get('btc_options', {}) if 'BTC' in s.get('asset_class', '') else {}
