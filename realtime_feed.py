@@ -8285,10 +8285,10 @@ def fetch_btc_pd_levels():
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=15, context=ctx) as response:
             data = json.loads(response.read().decode())
-            if data and len(data) >= 24:
+            if data and len(data) >= 48:
                 # Coinbase returns [timestamp, low, high, open, close, volume] - newest first
-                data.reverse()  # Oldest first
-                pd_candles = data[:24]  # First 24 = previous day
+                # Take candles 24-47 (previous day = 24-48 hours ago)
+                pd_candles = data[24:48]  # Previous 24h before current day
 
                 pd_high = max(float(c[2]) for c in pd_candles)
                 pd_low = min(float(c[1]) for c in pd_candles)
