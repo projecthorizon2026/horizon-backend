@@ -279,7 +279,8 @@ def fetch_historical_bars_for_trade(contract, entry_date, entry_time, api_key=No
         return bars if bars else {"debug": "no_bars_after_agg", "record_count": len(records)}
         
     except Exception as e:
-        print(f"ERROR fetching trades: {e}")
         import traceback
-        traceback.print_exc()
-        return None
+        tb = traceback.format_exc()
+        print(f"ERROR fetching trades: {e}")
+        print(tb)
+        return {"debug": "exception", "error": str(e), "traceback": tb[:500]}
