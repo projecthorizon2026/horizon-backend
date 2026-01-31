@@ -9994,7 +9994,11 @@ class LiveDataHandler(BaseHTTPRequestHandler):
         if path == '/refresh-pd':
             try:
                 print("🔄 Manual PD refresh triggered via /refresh-pd")
-                fetch_pd_levels()
+                # Use BTC-specific fetcher for spot contracts
+                if ACTIVE_CONTRACT == 'BTC-SPOT':
+                    fetch_btc_pd_levels()
+                else:
+                    fetch_pd_levels()
                 self.wfile.write(json.dumps({
                     'status': 'ok',
                     'pd_high': state.get('pd_high', 0),
