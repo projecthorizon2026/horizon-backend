@@ -173,14 +173,14 @@ def process_bars_for_trade_metrics(bars, entry_price, direction, stop_price, tar
                 try:
                     t1 = datetime.fromisoformat(t1.replace('Z', '+00:00'))
                 except:
-                    return None
+                    return {"debug": "binance_error", "error": str(e), "traceback": tb[:300]} if "tb" in dir() else None
             if isinstance(t2, str):
                 try:
                     t2 = datetime.fromisoformat(t2.replace('Z', '+00:00'))
                 except:
-                    return None
+                    return {"debug": "binance_error", "error": str(e), "traceback": tb[:300]} if "tb" in dir() else None
             return int((t2 - t1).total_seconds())
-        return None
+        return {"debug": "binance_error", "error": str(e), "traceback": tb[:300]} if "tb" in dir() else None
     
     return {
         "entry_triggered": entry_triggered,
@@ -218,11 +218,11 @@ def fetch_historical_bars_for_trade(contract, entry_date, entry_time, api_key=No
         import databento as db
     except ImportError:
         print("ERROR: Databento not installed")
-        return None
+        return {"debug": "binance_error", "error": str(e), "traceback": tb[:300]} if "tb" in dir() else None
     
     if not api_key:
         print("ERROR: No API key provided")
-        return None
+        return {"debug": "binance_error", "error": str(e), "traceback": tb[:300]} if "tb" in dir() else None
     
     try:
         ET = pytz.timezone('America/New_York')
@@ -344,7 +344,7 @@ def fetch_binance_klines(symbol, entry_date, entry_time, interval='1m'):
         return bars if bars else None
         
     except Exception as e:
-        print(f"ERROR fetching Binance klines: {e}")
-        return None
+        import traceback; tb = traceback.format_exc(); print(f"ERROR fetching Binance klines: {e}")
+        return {"debug": "binance_error", "error": str(e), "traceback": tb[:300]} if "tb" in dir() else None
 
 
