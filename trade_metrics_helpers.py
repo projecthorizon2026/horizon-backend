@@ -1,9 +1,54 @@
 """
 Trade Metrics Helper Functions for Project Horizon
+Uses trades schema and aggregates to 1-min bars
 """
 from datetime import datetime, timedelta
+from collections import defaultdict
 import pytz
 import os
+
+def aggregate_trades_to_bars(trade_records, front_month_iid):
+    """Aggregate tick data into 1-minute OHLCV bars"""
+    bars_dict = defaultdict(lambda: {'open': None, 'high': 0, 'low': float('inf'), 'close': None, 'volume': 0, 'trades': 0})
+    
+    for record in trade_records:
+        if record.instrument_id != front_month_iid:
+            continue
+        
+        # Get timestamp and round to minute
+        ts_ns = record.ts_event
+        ts_sec = ts_ns / 1e9
+        ts_dt = datetime.utcfromtimestamp(ts_sec)
+        minute_key = ts_dt.replace(second=0, microsecond=0)
+        
+        # Get price (fixed-point in Databento)
+        price = record.price / 1e9
+        size = record.size
+        
+        bar = bars_dict[minute_key]
+        if bar['open'] is None:
+            bar['open'] = price
+        bar['high'] = max(bar['high'], price)
+        bar['low'] = min(bar['low'], price)
+        bar['close'] = price
+        bar['volume'] += size
+        bar['trades'] += 1
+    
+    # Convert to list sorted by time
+    bars = []
+    for ts, bar in sorted(bars_dict.items()):
+        if bar['open'] is not None:
+            bars.append({
+                'timestamp': ts.isoformat(),
+                'open': bar['open'],
+                'high': bar['high'],
+                'low': bar['low'],
+                'close': bar['close'],
+                'volume': bar['volume']
+            })
+    
+    return bars
+
 
 def process_bars_for_trade_metrics(bars, entry_price, direction, stop_price, targets):
     """Process bar data to calculate trade metrics."""
@@ -161,8 +206,7 @@ def process_bars_for_trade_metrics(bars, entry_price, direction, stop_price, tar
 
 def fetch_historical_bars_for_trade(contract, entry_date, entry_time, api_key=None):
     """
-    Fetch 1-min bars from Databento for trade analysis.
-    Returns list of bars from entry_time to end of session.
+    Fetch trades from Databento and aggregate to 1-min bars.
     """
     try:
         import databento as db
@@ -170,9 +214,8 @@ def fetch_historical_bars_for_trade(contract, entry_date, entry_time, api_key=No
         print("ERROR: Databento not installed")
         return None
     
-    api_key = api_key or os.environ.get('DATABENTO_API_KEY', '')
     if not api_key:
-        print("ERROR: No DATABENTO_API_KEY found")
+        print("ERROR: No API key provided")
         return None
     
     try:
@@ -183,74 +226,60 @@ def fetch_historical_bars_for_trade(contract, entry_date, entry_time, api_key=No
         hour, minute = map(int, entry_time.split(':')[:2])
         entry_dt = ET.localize(datetime.strptime(entry_date, '%Y-%m-%d').replace(hour=hour, minute=minute))
         
-        # End of session (5:00 PM ET or extend if after hours)
+        # End of session (5:00 PM ET next day if after 5 PM)
         end_dt = entry_dt.replace(hour=17, minute=0)
         if entry_dt.hour >= 17:
             end_dt += timedelta(days=1)
         
-        # Convert to UTC for Databento API
+        # Convert to UTC
         start_utc = entry_dt.astimezone(UTC)
         end_utc = end_dt.astimezone(UTC)
         
-        # Format as ISO8601 with explicit UTC
-        start_ts = start_utc.strftime('%Y-%m-%dT%H:%M:%S+00:00')
-        end_ts = end_utc.strftime('%Y-%m-%dT%H:%M:%S+00:00')
+        start_ts = start_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
+        end_ts = end_utc.strftime('%Y-%m-%dT%H:%M:%SZ')
         
-        print(f"📊 Fetching OHLCV-1m bars")
+        print(f"📊 Fetching trades for bar aggregation")
         print(f"   Entry (ET): {entry_dt}")
-        print(f"   Start (UTC): {start_ts}")
-        print(f"   End (UTC): {end_ts}")
+        print(f"   Range: {start_ts} to {end_ts}")
         
-        # Use parent symbol for continuous contract
         client = db.Historical(key=api_key)
         data = client.timeseries.get_range(
             dataset='GLBX.MDP3',
             symbols=['GC.FUT'],
             stype_in='parent',
-            schema='ohlcv-1m',
+            schema='trades',
             start=start_ts,
-            end=end_ts,
+            end=end_ts
         )
         
         records = list(data)
-        print(f"   Got {len(records)} bar records from Databento")
+        print(f"   Got {len(records)} trade records")
         
         if not records:
-            print("   WARNING: No records returned")
+            print("   WARNING: No trade records returned")
             return None
         
-        bars = []
-        for record in records:
-            try:
-                ts = record.ts_event
-                if hasattr(ts, 'isoformat'):
-                    ts_str = ts.isoformat()
-                else:
-                    # ts_event is in nanoseconds since epoch
-                    ts_dt = datetime.utcfromtimestamp(ts / 1e9)
-                    ts_str = ts_dt.isoformat()
-                
-                bars.append({
-                    'timestamp': ts_str,
-                    'open': record.open / 1e9,
-                    'high': record.high / 1e9,
-                    'low': record.low / 1e9,
-                    'close': record.close / 1e9,
-                    'volume': record.volume
-                })
-            except Exception as e:
-                print(f"   Error parsing record: {e}")
-                continue
+        # Find front month instrument
+        by_instrument = {}
+        for r in records:
+            iid = r.instrument_id
+            by_instrument[iid] = by_instrument.get(iid, 0) + 1
         
-        print(f"   Parsed {len(bars)} bars successfully")
+        front_month_iid = max(by_instrument.items(), key=lambda x: x[1])[0]
+        print(f"   Front month instrument ID: {front_month_iid}")
+        
+        # Aggregate to 1-min bars
+        bars = aggregate_trades_to_bars(records, front_month_iid)
+        print(f"   Aggregated to {len(bars)} 1-min bars")
+        
         if bars:
-            print(f"   First bar: {bars[0]['timestamp']} O:{bars[0]['open']:.2f}")
+            print(f"   First bar: {bars[0]['timestamp']} O:{bars[0]['open']:.2f} H:{bars[0]['high']:.2f} L:{bars[0]['low']:.2f} C:{bars[0]['close']:.2f}")
             print(f"   Last bar: {bars[-1]['timestamp']} C:{bars[-1]['close']:.2f}")
         
         return bars if bars else None
         
     except Exception as e:
-        print(f"ERROR fetching historical bars: {e}")
+        print(f"ERROR fetching trades: {e}")
         import traceback
         traceback.print_exc()
         return None
